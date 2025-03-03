@@ -5,9 +5,19 @@
 Queue *queue_create(void)
 {
   Queue *queue = malloc(sizeof(Queue));
+  if (queue == NULL)
+  {
+    fprintf(stderr, "Error: malloc failed\n");
+    exit(1);
+  }
   queue->size = 0;
   queue->capacity = QUEUE_INITIAL_CAPACITY;
   queue->data = malloc(sizeof(double) * queue->capacity);
+  if (queue->data == NULL)
+  {
+    fprintf(stderr, "Error: malloc failed\n");
+    exit(1);
+  }
   return queue;
 }
 
@@ -19,6 +29,11 @@ void push(Queue *queue, double element)
     int capacity = queue->capacity * 2;
 
     queue->data = realloc(queue->data, sizeof(double) * capacity);
+    if (queue->data == NULL)
+    {
+      fprintf(stderr, "Error: realloc failed\n");
+      exit(1);
+    }
     queue->capacity = capacity;
   }
 
