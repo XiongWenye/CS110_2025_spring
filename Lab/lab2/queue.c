@@ -53,6 +53,11 @@ double back(Queue *queue)
     fprintf(stderr, "Error: queue is NULL\n");
     exit(1);
   }
+  if (queue->size == 0)
+  {
+    fprintf(stderr, "Error: queue is empty\n");
+    exit(1);
+  }
   return queue->data[queue->size - 1];
 }
 
