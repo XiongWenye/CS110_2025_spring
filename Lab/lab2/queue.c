@@ -72,3 +72,16 @@ void queue_free(Queue *queue)
   free(queue);
 }
 
+// This is beneficial because it allows the function to modify the pointer to the queue, which is useful when the pointer to the queue needs to be set to NULL after freeing the queue. This can help prevent dangling pointers and memory leaks.
+void another_queue_free(Queue **queue)
+{
+  if (*queue == NULL)
+  {
+    fprintf(stderr, "Error: queue is NULL\n");
+    exit(1);
+  }
+  free((*queue)->data);
+  free(*queue);
+  *queue = NULL;
+}
+
