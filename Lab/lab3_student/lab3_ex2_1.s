@@ -29,8 +29,12 @@ loop:
 	add t4, t1, t3
 	lw t5, 0(t4)
 	beq t5, x0, exit
+	andi t6, t0, 1  # Check if k is odd
+	bnez t6, next   # If odd, jump to next
+	slli t5, t5, 1  # Double the value
 	add t6, t2, t3
 	sw t5, 0(t6)
+next:
 	addi t0, t0, 1
 	jal x0, loop
 exit:
