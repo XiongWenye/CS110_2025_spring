@@ -30,7 +30,7 @@ finish: addi    a0, x0, 1         # system call code 1 = print integer
 .text: Specifies the text segment where program instructions are stored  
 
 1. Pseudo-instruction translations  
-la (load address): Typically expands to auipc + addi instructions  
+la (load address): Typically expands to auipc + addi instructions: auipc rd, offset_hi; addi rd, rd, offset_lo
 mv (move): Expands to addi rd, rs, 0 (add immediate with 0)  
 j (jump): Expands to jal x0, offset (jump without saving return address)  
 
