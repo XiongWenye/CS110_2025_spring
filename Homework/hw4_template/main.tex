@@ -69,21 +69,43 @@ The circuit shown in Figure.~\ref{fig:Q1_circuit} is a 1-bit comparator. Answer 
 \end{figure}
 \begin{answer}[Question 1]
     Your answer here.\\
+    (a) Un-simplified logic expressions: \\
+    \begin{align*} 
+        Y0 &= \overline{AB} \cdot A\\
+        Y1 &= \overline{(\overline{AB} \cdot A) + (\overline{AB} \cdot B)} \\
+        Y2 &= \overline{AB} \cdot B
+    \end{align*}
     (b) Do not modify the given values in the truth table.\\
     \begin{center}
         \begin{tabular}{ |c|c||c|c|c| } 
          \hline
          A & B & Y2 & Y1 & Y0 \\ 
          \hline
-         0 & 0 &  &  &   \\ 
+         0 & 0 & 0 & 1 & 0  \\ 
          \hline
-         0 & 1 &  &  &   \\ 
+         0 & 1 & 1 & 0 &  0 \\ 
          \hline
-         1 & 0 &  &  &   \\
+         1 & 0 & 0 & 0 &  1 \\
          \hline
-         1 & 1 &  &  &   \\
+         1 & 1 & 0 & 1 &  0 \\
          \hline
         \end{tabular}
+    \end{center}
+    (c) Sum of minterms: \\
+    \begin{align*} 
+        Y0 &= A \cdot \overline{B} \\
+        Y1 &= \overline{A} \cdot \overline{B} + A \cdot B \\
+        Y2 &= \overline{A} \cdot B
+    \end{align*}
+    (d) The outputs represent the following comparisons: \\
+    \begin{align*} 
+        Y0 &= A > B \\
+        Y1 &= A = B \\
+        Y2 &= A < B
+    \end{align*}
+    (e) The circuit diagram of the 2-bit comparator is shown below\\
+    \begin{center}
+        \includegraphics[width=0.8\textwidth]{p1.jpg}
     \end{center}
 \end{answer}
 
@@ -104,6 +126,32 @@ What is the minimum acceptable clock cycle time for this circuit? What
  
 \begin{answer}[Question 2]
         Your answer here. \\
+        The minimum clock cycle time $T_{min}$ is determined by the longest delay path between any two consecutive registers in the circuit. This delay must account for:\\
+        1. $T_{clk-q}$ 
+        2. $T_{comb}$: The maximum propagation delay through the combinational logic gates between the output of the first register and the input (D) of the second register.\\
+        3. $T_{setup}$
+        $T_{min} = T_{clk-q} + T_{comb} + T_{setup}$\\
+        There are three paths in the circuit: \\
+        Path 1: Input Registers to Register 1 :\\
+        The path involves an AND gate followed by a NOR gate leading to the D input of the first register.\\
+        Delay = Delay(AND) + Delay(NOR) = 4 ns + 3 ns = 7 ns.(There's also a path from the bottom input through just the NOR gate: Delay(NOR) = 3 ns. We take the longer path).\\
+        Path 2: Register 1 to Register 2 :\\
+        The path involves the output of Register 1 going through two AND gates to the D input of Register 2.\\
+        Delay = 2 * Delay(AND) = 8 ns. \\
+        Path 3: Register 2 to Register 3 :\\
+        The path involves the output of Register 2 going through a NOR gate to the D input of Register 3.\\
+        Delay = Delay(NOR) = 3 ns. \\
+        So the longest path is Path 1, which has a delay of 7 ns.\\
+        Now, we can calculate the minimum clock cycle time: \\
+        $T_{min} = T_{clk-q} + T_{comb} + T_{setup}$\\
+        $T_{min} = 2 \text{ ns} + 8 \text{ ns} + 2 \text{ ns}$\\
+        $T_{min} = 12 \text{ ns}$\\
+        The clock frequency (f) is the reciprocal of the clock cycle time: \\
+        $f = 1 / T_{min}$\\
+        $f = 1 / 12 \text{ ns}$\\
+        $f = 83.33 \text{ MHz}$\\
+        Therefore, the minimum acceptable clock cycle time for this circuit is 12 ns, which corresponds to a clock frequency of approximately 83.33 MHz.
+
 \end{answer}
 
 \newpage
@@ -119,35 +167,47 @@ e.g: input='011001', state=\{start\}$\xrightarrow{}$\{10\}$\xrightarrow{}$\{01\}
 
 (d) Draw the circuit diagram for NS and output. \textbf{[15 pt]}
 \begin{answer}[Question 3]
-        Your answer here. \\
-        (c) Do not modify the given values in the truth table.\\
+    Your answer here.\\
+    (a) The FSM (Moore machine) is shown below.\\
         \begin{center}
-            \begin{tabular}{ |c|c|c|c||c|c|c|c| } 
-             \hline
-             CS[2] & CS[1] & CS[0] & input & NS[2] & NS[1] & NS[0] & output \\ 
-             \hline
-             0 & 0 & 0 & 0 &  &  &  &  \\ 
-             \hline
-             0 & 0 & 0 & 1 &  &  &  &  \\ 
-             \hline
-             1 & 1 & 0 & 0 &  &  &  &  \\ 
-             \hline
-             1 & 1 & 0 & 1 &  &  &  &  \\ 
-             \hline
-             1 & 0 & 1 & 0 &  &  &  &  \\ 
-             \hline
-             1 & 0 & 1 & 1 &  &  &  &  \\ 
-             \hline
-             1 & 0 & 0 & 0 &  &  &  &  \\ 
-             \hline
-             1 & 0 & 0 & 1 &  &  &  &  \\ 
-             \hline
-             1 & 1 & 1 & 0 &  &  &  &  \\ 
-             \hline
-             1 & 1 & 1 & 1 &  &  &  &  \\ 
-             \hline
-            \end{tabular}
+            \includegraphics[width=0.2\textwidth]{FSM.png}
         \end{center}
+    (b) The FSM (Mealy machine) is shown below.\\
+        \begin{center}
+            \includegraphics[width=0.2\textwidth]{FSM2.png}
+        \end{center}
+    (c) Do not modify the given values in the truth table.\\
+    \begin{center}
+        \begin{tabular}{ |c|c|c|c||c|c|c|c| } 
+            \hline
+            CS[2] & CS[1] & CS[0] & input & NS[2] & NS[1] & NS[0] & output \\ 
+            \hline
+            0 & 0 & 0 & 0 & 1 & 1 & 0 & 0 \\ 
+            \hline
+            0 & 0 & 0 & 1 & 1 & 0 & 1 & 0 \\ 
+            \hline
+            1 & 1 & 0 & 0 & 1 & 0 & 0 & 0 \\ 
+            \hline
+            1 & 1 & 0 & 1 & 1 & 0 & 1 & 0 \\ 
+            \hline
+            1 & 0 & 1 & 0 & 1 & 1 & 0 & 0 \\ 
+            \hline
+            1 & 0 & 1 & 1 & 1 & 1 & 1 & 0 \\ 
+            \hline
+            1 & 0 & 0 & 0 & 1 & 0 & 0 & 1 \\ 
+            \hline
+            1 & 0 & 0 & 1 & 1 & 0 & 1 & 1 \\ 
+            \hline
+            1 & 1 & 1 & 0 & 1 & 1 & 0 & 1 \\ 
+            \hline
+            1 & 1 & 1 & 1 & 1 & 1 & 1 & 1 \\ 
+            \hline
+        \end{tabular}
+    \end{center}
+    (d) The circuit diagram for NS and output is shown below.\\
+    \begin{center}
+        \includegraphics[width=0.8\textwidth]{FSM_circuit.png}
+    \end{center}
         
 \end{answer}
 
