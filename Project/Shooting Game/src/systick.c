@@ -55,3 +55,38 @@ void delay_1ms(uint32_t count)
 	delta_mtime = get_timer_value() - start_mtime;
 	}while(delta_mtime <(SystemCoreClock/4000 *count ));
 }
+
+
+static volatile uint32_t system_ticks = 0;
+
+// Initialize a timer for timing
+void timer_init(void) {
+    rcu_periph_clock_enable(RCU_TIMER1);
+    
+    timer_parameter_struct timer_initpara;
+    timer_deinit(TIMER1);
+    
+    // Configure timer for 1ms ticks (assuming 108MHz system clock)
+    timer_initpara.prescaler = 107;  // 108MHz / 108 = 1MHz
+    timer_initpara.alignedmode = TIMER_COUNTER_EDGE;
+    timer_initpara.counterdirection = TIMER_COUNTER_UP;
+    timer_initpara.period = 999;  // 1MHz / 1000 = 1ms
+    timer_initpara.clockdivision = TIMER_CKDIV_DIV1;
+    timer_init(TIMER1, &timer_initpara);
+    
+    timer_interrupt_enable(TIMER1, TIMER_INT_UP);
+    nvic_irq_enable(TIMER1_IRQn, 1);
+    timer_enable(TIMER1);
+}
+
+// Timer interrupt handler
+void TIMER1_IRQHandler(void) {
+    if (timer_interrupt_flag_get(TIMER1, TIMER_INT_FLAG_UP)) {
+        timer_interrupt_flag_clear(TIMER1, TIMER_INT_FLAG_UP);
+        system_ticks++;
+    }
+}
+
+uint32_t get_tick_count(void) {
+    return system_ticks;
+}
