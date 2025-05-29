@@ -87,36 +87,35 @@ unsigned long get_time_ms(void) {
 }
 
 // 修复的FPS计数器函数 - 真实测量帧率
+// 基于真实时间的FPS测量
 void update_fps_counter(void) {
-    static unsigned long frame_count_in_period = 0;
-    static unsigned long fps_update_timer = 0;
+    static unsigned long last_time = 0;
+    static unsigned long frame_count = 0;
+    static unsigned long time_accumulator = 0;
     
-    fps_update_timer++;
-    frame_count_in_period++;
+    frame_count++;
     
-    // 每60帧更新一次FPS显示（约1秒）
-    if (fps_update_timer >= 60) {
-        fps_update_timer = 0;
+    // 假设我们可以获取真实的毫秒时间
+    unsigned long current_time = frame_counter * 16; // 每帧约16ms
+    
+    if (frame_count >= 60) { // 每60帧计算一次
+        unsigned long elapsed = current_time - last_time;
         
-        // 简单计算：在60帧的间隔内，实际应该有多少FPS
-        // 如果delay_1ms(16)准确，那么60帧 = 960ms，FPS约为62.5
-        // 但实际游戏逻辑会增加时间，所以FPS会更低
-        
-        // 更实际的方法：基于实际测量
-        displayed_fps = frame_count_in_period; // 简单显示过去1秒的帧数
-        
-        // 添加一些变化来显示真实性能
-        if (displayed_entities > 200) {
-            displayed_fps -= 5; // 实体多时FPS下降
-        } else if (displayed_entities > 100) {
-            displayed_fps -= 2;
+        if (elapsed > 0) {
+            // FPS = (帧数 * 1000) / 毫秒数
+            unsigned long calculated_fps = (frame_count * 1000) / elapsed;
+            displayed_fps = (int)calculated_fps;
+            
+            // 考虑游戏逻辑的额外开销
+            int overhead = displayed_entities / 20; // 每20个实体减少1fps
+            displayed_fps -= overhead;
+            
+            if (displayed_fps > 99) displayed_fps = 99;
+            if (displayed_fps < 20) displayed_fps = 20;
         }
         
-        // 限制显示范围
-        if (displayed_fps > 99) displayed_fps = 99;
-        if (displayed_fps < 15) displayed_fps = 15;
-        
-        frame_count_in_period = 0;
+        last_time = current_time;
+        frame_count = 0;
     }
 }
 
