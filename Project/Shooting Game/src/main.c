@@ -4,7 +4,7 @@
 #include "assembly/select.h"
 
 // Game constants - 大幅增加数量
-#define SCREEN_WIDTH 100
+#define SCREEN_WIDTH 120
 #define SCREEN_HEIGHT 80
 #define PLAYER_SIZE 4
 #define ENEMY_SIZE 3
@@ -170,8 +170,8 @@ void draw_performance_counters(void) {
         }
         
         // 重绘实体计数
-        LCD_ShowString(SCREEN_WIDTH + 5, 30, (u8*)"ENT", WHITE);
-        LCD_ShowNum(SCREEN_WIDTH +5 , 45, displayed_entities, 3, WHITE);
+        LCD_ShowString(SCREEN_WIDTH + 5, 35, (u8*)"ENT", WHITE);
+        LCD_ShowNum(SCREEN_WIDTH +5 , 50, displayed_entities, 3, WHITE);
         
         last_displayed_entities = displayed_entities;
     }
