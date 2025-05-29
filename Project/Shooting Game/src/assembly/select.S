@@ -24,35 +24,28 @@ selection_loop:
     li a0, 0         // BLACK color
     jal LCD_Clear
     
-    // Draw title
-    li a0, 20        // x
-    li a1, 10        // y  
-    la a2, title_str // string
-    li a3, 65535     // WHITE color
-    jal LCD_ShowString
-    
     // Draw options
     li a0, 40        // x
-    li a1, 40        // y
+    li a1, 15        // y
     la a2, easy_str  // "EASY"
     li a3, 65535     // WHITE
     jal LCD_ShowString
     
     li a0, 40        // x
-    li a1, 60        // y
+    li a1, 35       // y
     la a2, normal_str // "NORMAL"
     li a3, 65535     // WHITE
     jal LCD_ShowString
     
     li a0, 40        // x
-    li a1, 80        // y
+    li a1, 55     // y
     la a2, hard_str  // "HARD"
     li a3, 65535     // WHITE
     jal LCD_ShowString
     
     // Draw cursor based on current selection
     li a0, 25        // x position for cursor
-    li a1, 40        // base y position
+    li a1, 15        // base y position
     li t0, 20        // offset per option
     mul t1, s0, t0   // calculate offset
     add a1, a1, t1   // final y position
