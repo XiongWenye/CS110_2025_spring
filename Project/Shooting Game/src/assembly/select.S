@@ -1,6 +1,7 @@
 .section .data
-// Add title“席文义出品” at the top of the screen
-.title_str:  .asciz "席文义出品"
+title_char1:    .asciz "席"
+title_char2:    .asciz "文"
+title_char3:    .asciz "义"
 easy_str:     .asciz "EASY"
 normal_str:   .asciz "NORMAL" 
 hard_str:     .asciz "HARD"
@@ -25,11 +26,22 @@ select:
     li a0, 0         // BLACK color
     jal LCD_Clear
     // Draw title
-    li a0, 20        // x
-    li a1, 10        // y
-    la a2, title_str // "席文义出品" Red color
-    // Assuming the color is defined as RED (0xF800)
-    li a3, 63488     // RED color
+    li a0, 50        // x - centered position
+    li a1, 5         // y - top of screen
+    la a2, title_char1  // "席"
+    li a3, 65535     // WHITE
+    jal LCD_ShowChinese
+    
+    li a0, 70        // x
+    li a1, 5         // y
+    la a2, title_char2  // "文"
+    li a3, 65535     // WHITE
+    jal LCD_ShowChinese
+    
+    li a0, 90        // x
+    li a1, 5         // y
+    la a2, title_char3  // "义"
+    li a3, 65535     // WHITE
     jal LCD_ShowChinese
 
     // Draw horizontal line
