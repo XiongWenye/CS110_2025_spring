@@ -75,7 +75,7 @@ select:
     
 selection_loop:
     // Check for UP button
-    li a0, 2         // JOY_UP
+    li a0, 3         // JOY_UP
     jal Get_Button
     beqz a0, check_down
     

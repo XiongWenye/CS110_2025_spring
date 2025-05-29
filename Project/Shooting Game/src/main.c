@@ -24,8 +24,9 @@ typedef struct {
     int x, y;
     int active;
     int speed;
-    int dx, dy;  // Direction vectors (new fields)
+    int dx, dy;  // Direction vectors
 } Bullet;
+
 // Enemy structure
 typedef struct {
     int x, y;
@@ -71,6 +72,8 @@ void init_game(void) {
     }
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
         enemy_bullets[i].active = 0;
+        enemy_bullets[i].dx = 0;
+        enemy_bullets[i].dy = 0;
     }
     
     // Initialize enemies
@@ -81,6 +84,8 @@ void init_game(void) {
         enemies[i].speed = 1;
         enemies[i].shoot_timer = 0;
     }
+    
+    game_running = 1;
 }
 
 // Draw a filled rectangle (simple pixel representation)
@@ -123,18 +128,26 @@ void update_player(void) {
         player.y += player.speed;
     }
     
-    // Handle shooting
+    // Handle shooting - BUTTON_1 with debounce
+    static int button1_debounce = 0;
     if (Get_Button(BUTTON_1)) {
-        // Find available bullet slot
-        for (int i = 0; i < MAX_BULLETS; i++) {
-            if (!player_bullets[i].active) {
-                player_bullets[i].x = player.x + PLAYER_SIZE / 2;
-                player_bullets[i].y = player.y;
-                player_bullets[i].active = 1;
-                player_bullets[i].speed = 3;
-                break;
+        if (!button1_debounce) {
+            button1_debounce = 1;
+            // Find available bullet slot
+            for (int i = 0; i < MAX_BULLETS; i++) {
+                if (!player_bullets[i].active) {
+                    player_bullets[i].x = player.x + PLAYER_SIZE / 2;
+                    player_bullets[i].y = player.y;
+                    player_bullets[i].active = 1;
+                    player_bullets[i].speed = 3;
+                    player_bullets[i].dx = 0;  // 重要：初始化方向为0
+                    player_bullets[i].dy = 0;  // 重要：初始化方向为0
+                    break;
+                }
             }
         }
+    } else {
+        button1_debounce = 0;
     }
 
     // BUTTON_2 shoots bullets in all directions like a circle
@@ -164,7 +177,7 @@ void update_player(void) {
                         player_bullets[i].y = player.y;
                         player_bullets[i].active = 1;
                         player_bullets[i].speed = 2;
-                        // Store direction in unused fields (we'll need to modify the structure)
+                        // Store direction
                         player_bullets[i].dx = directions[dir][0];
                         player_bullets[i].dy = directions[dir][1];
                         bullets_fired++;
@@ -206,9 +219,12 @@ void update_player_bullets(void) {
                 player_bullets[i].x < 0 || player_bullets[i].x > SCREEN_WIDTH) {
                 player_bullets[i].active = 0;
             } else {
-                // Draw bullet
-                u16 bullet_color = (player_bullets[i].dx == 0 && player_bullets[i].dy == 0) ? WHITE : CYAN;
-                draw_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE, bullet_color);
+                // Draw bullet with bounds checking
+                if (player_bullets[i].x >= 0 && player_bullets[i].x < SCREEN_WIDTH &&
+                    player_bullets[i].y >= 0 && player_bullets[i].y < SCREEN_HEIGHT) {
+                    u16 bullet_color = (player_bullets[i].dx == 0 && player_bullets[i].dy == 0) ? WHITE : CYAN;
+                    draw_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE, bullet_color);
+                }
             }
         }
     }
@@ -267,6 +283,8 @@ void update_enemy_bullets(void) {
                         enemy_bullets[j].y = enemies[i].y + ENEMY_SIZE;
                         enemy_bullets[j].active = 1;
                         enemy_bullets[j].speed = 2;
+                        enemy_bullets[j].dx = 0;
+                        enemy_bullets[j].dy = 1;  // 敌人子弹向下
                         break;
                     }
                 }
@@ -287,8 +305,11 @@ void update_enemy_bullets(void) {
             if (enemy_bullets[i].y > SCREEN_HEIGHT) {
                 enemy_bullets[i].active = 0;
             } else {
-                // Draw bullet
-                draw_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE, YELLOW);
+                // Draw bullet with bounds checking
+                if (enemy_bullets[i].x >= 0 && enemy_bullets[i].x < SCREEN_WIDTH &&
+                    enemy_bullets[i].y >= 0 && enemy_bullets[i].y < SCREEN_HEIGHT) {
+                    draw_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE, YELLOW);
+                }
             }
         }
     }
@@ -311,8 +332,8 @@ void game_loop(int difficulty) {
         // Small delay to control frame rate
         delay_1ms(16); // Approximately 60 FPS
         
-        // Exit condition (optional)
-        if (Get_Button(BUTTON_1)) {
+        // Exit condition - use JOY_CTR to exit game
+        if (Get_Button(JOY_CTR)) {
             game_running = 0;
         }
     }
