@@ -11,7 +11,7 @@
 #define BULLET_SIZE 2
 #define MAX_BULLETS 300         // 增加到300个玩家子弹
 #define MAX_ENEMY_BULLETS 300   // 增加到300个敌人子弹
-#define MAX_ENEMIES 20          // 增加到20个敌人
+#define MAX_ENEMIES 200         
 
 // Player structure
 typedef struct {
