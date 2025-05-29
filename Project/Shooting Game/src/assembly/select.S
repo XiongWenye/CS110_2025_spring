@@ -1,7 +1,7 @@
 .section .data
-title_char1:    .asciz "席"
-title_char2:    .asciz "文"
-title_char3:    .asciz "义"
+title_char1:    .asciz "SUP"
+title_char2:    .asciz "ERC"
+title_char3:    .asciz "ELL"
 easy_str:     .asciz "EASY"
 normal_str:   .asciz "NORMAL" 
 hard_str:     .asciz "HARD"
@@ -28,21 +28,21 @@ select:
     // Draw title
     li a0, 50        // x - centered position
     li a1, 5         // y - top of screen
-    la a2, title_char1  // "席"
+    la a2, title_char1  // 
     li a3, 65535     // WHITE
-    jal LCD_ShowChinese
+    jal LCD_ShowString
     
     li a0, 70        // x
     li a1, 5         // y
-    la a2, title_char2  // "文"
+    la a2, title_char2  // 
     li a3, 65535     // WHITE
-    jal LCD_ShowChinese
+    jal LCD_ShowString
     
     li a0, 90        // x
     li a1, 5         // y
-    la a2, title_char3  // "义"
+    la a2, title_char3  // 
     li a3, 65535     // WHITE
-    jal LCD_ShowChinese
+    jal LCD_ShowString
 
     // Draw horizontal line
     // Draw all options
