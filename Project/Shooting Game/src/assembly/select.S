@@ -33,66 +33,16 @@ select:
     // Draw static elements
     jal draw_static_elements
     
-    // Force initial cursor draw
-    j force_cursor_draw
-    
-selection_loop:
-    // Only redraw cursor if position changed
-    bne s0, s2, redraw_cursor
-    j check_input
-    
-force_cursor_draw:
-redraw_cursor:
-    // Erase old cursor position (if not first draw)
-    li t2, -1
-    beq s2, t2, skip_erase
+    // Draw initial cursor
     li a0, 10        // x position for cursor
-    
-    // Calculate old cursor Y position
-    beqz s2, old_cursor_easy     // if s2 == 0 (EASY)
-    li t0, 1
-    beq s2, t0, old_cursor_normal // if s2 == 1 (NORMAL)
-    li a1, 55        // s2 == 2 (HARD)
-    j erase_old_cursor
-    
-old_cursor_easy:
-    li a1, 25        // EASY Y position
-    j erase_old_cursor
-    
-old_cursor_normal:
-    li a1, 40        // NORMAL Y position
-    
-erase_old_cursor:
-    la a2, space_str // " " to erase
-    li a3, 0         // BLACK color
-    jal LCD_ShowString
-    
-skip_erase:
-    // Draw new cursor
-    li a0, 10        // x position for cursor
-    
-    // Calculate new cursor Y position
-    beqz s0, new_cursor_easy     // if s0 == 0 (EASY)
-    li t0, 1
-    beq s0, t0, new_cursor_normal // if s0 == 1 (NORMAL)
-    li a1, 55        // s0 == 2 (HARD)
-    j draw_new_cursor
-    
-new_cursor_easy:
-    li a1, 25        // EASY Y position
-    j draw_new_cursor
-    
-new_cursor_normal:
-    li a1, 40        // NORMAL Y position
-    
-draw_new_cursor:
+    li a1, 25        // y position for EASY (initial selection)
     la a2, cursor_str // ">"
     li a3, 31        // BLUE color
     jal LCD_ShowString
     
-    mv s2, s0        // Update previous cursor position
+    mv s2, s0        // Update previous cursor position to current
     
-check_input:
+selection_loop:
     // Check for UP button
     li a0, 2         // JOY_UP
     jal Get_Button
@@ -105,11 +55,11 @@ check_input:
     // Move cursor up
     addi s0, s0, -1
     bltz s0, wrap_to_bottom
-    j check_center
+    j redraw_cursor
     
 wrap_to_bottom:
     li s0, 2         // wrap to hard mode
-    j check_center
+    j redraw_cursor
     
 check_down:
     // Check for DOWN button
@@ -125,10 +75,58 @@ check_down:
     addi s0, s0, 1
     li t0, 3
     bge s0, t0, wrap_to_top
-    j check_center
+    j redraw_cursor
     
 wrap_to_top:
     li s0, 0         // wrap to easy mode
+    j redraw_cursor
+    
+redraw_cursor:
+    // Erase old cursor position
+    li a0, 10        // x position for cursor
+    
+    // Calculate old cursor Y position
+    beqz s2, erase_easy     // if s2 == 0 (EASY)
+    li t0, 1
+    beq s2, t0, erase_normal // if s2 == 1 (NORMAL)
+    li a1, 55        // s2 == 2 (HARD)
+    j erase_cursor
+    
+erase_easy:
+    li a1, 25        // EASY Y position
+    j erase_cursor
+    
+erase_normal:
+    li a1, 40        // NORMAL Y position
+    
+erase_cursor:
+    la a2, space_str // " " to erase
+    li a3, 0         // BLACK color
+    jal LCD_ShowString
+    
+    // Draw new cursor
+    li a0, 10        // x position for cursor
+    
+    // Calculate new cursor Y position
+    beqz s0, draw_easy     // if s0 == 0 (EASY)
+    li t0, 1
+    beq s0, t0, draw_normal // if s0 == 1 (NORMAL)
+    li a1, 55        // s0 == 2 (HARD)
+    j draw_cursor
+    
+draw_easy:
+    li a1, 25        // EASY Y position
+    j draw_cursor
+    
+draw_normal:
+    li a1, 40        // NORMAL Y position
+    
+draw_cursor:
+    la a2, cursor_str // ">"
+    li a3, 31        // BLUE color
+    jal LCD_ShowString
+    
+    mv s2, s0        // Update previous cursor position
     
 check_center:
     // Check for CENTER button
