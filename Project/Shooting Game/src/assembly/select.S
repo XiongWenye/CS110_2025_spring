@@ -37,7 +37,7 @@ select:
     li a0, 10        // x position for cursor
     li a1, 25        // y position for EASY (initial selection)
     la a2, cursor_str // ">"
-    li a3, 31        // BLUE color
+    li a3, 65535     // WHITE color (changed from BLUE)
     jal LCD_ShowString
     
     mv s2, s0        // Update previous cursor position to current
@@ -101,7 +101,7 @@ erase_normal:
     
 erase_cursor:
     la a2, space_str // " " to erase
-    li a3, 0         // BLACK color
+    li a3, 65535     // WHITE color (changed from BLACK)
     jal LCD_ShowString
     
     // Draw new cursor
@@ -123,7 +123,7 @@ draw_normal:
     
 draw_cursor:
     la a2, cursor_str // ">"
-    li a3, 31        // BLUE color
+    li a3, 65535     // WHITE color (changed from BLUE)
     jal LCD_ShowString
     
     mv s2, s0        // Update previous cursor position
