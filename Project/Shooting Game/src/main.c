@@ -124,9 +124,9 @@ void spawn_random_enemy(void) {
         if (!enemies[i].active) {
             // Random spawn position at top of screen
             enemies[i].x = simple_rand() % (SCREEN_WIDTH - ENEMY_SIZE);
-            enemies[i].y = -(simple_rand() % 20 + 5);  // Spawn above screen
+            enemies[i].y = (simple_rand() % 20 + 5);  // Spawn above screen
             enemies[i].active = 1;
-            enemies[i].speed = 1 + simple_rand() % 3;  // Random speed 1-3
+            enemies[i].speed = -1 + simple_rand() % 3;  // Random speed 1-3
             enemies[i].shoot_timer = simple_rand() % 60;  // Random initial timer
             enemies[i].type = simple_rand() % 4;  // 四种类型的敌人 (0-3)
             break;
@@ -137,7 +137,7 @@ void spawn_random_enemy(void) {
 // Spawn enemy formation
 void spawn_enemy_formation(void) {
     // Spawn a formation of 3-5 enemies
-    int formation_size = 3 + simple_rand() % 3;  // 3-5 enemies
+    int formation_size = 10 + simple_rand() % 3;  // 3-5 enemies
     int start_x = simple_rand() % (SCREEN_WIDTH - formation_size * 25);
     
     for (int i = 0; i < formation_size; i++) {
@@ -331,7 +331,14 @@ void update_enemies(void) {
             
             // Remove enemy if it goes off screen
             if (enemies[i].y > SCREEN_HEIGHT) {
-                enemies[i].active = 0;
+                enemies[i].speed = - enemies[i].speed;  // Reverse direction
+                enemies[i].y = SCREEN_HEIGHT;  // Reset to bottom
+                continue;
+            }
+
+            if (enemies[i].y < 0) {
+                enemies[i].speed = - enemies[i].speed;  // Reverse direction
+                enemies[i].y = 0;  // Reset to top
                 continue;
             }
             
