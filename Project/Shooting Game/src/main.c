@@ -131,65 +131,51 @@ void update_player(void) {
     if (Get_Button(JOY_DOWN) && player.y < SCREEN_HEIGHT - PLAYER_SIZE) {
         player.y += player.speed;
     }
-    
-    // Handle shooting - BUTTON_1 (single bullet)
-    static int button1_pressed = 0;
+
     if (Get_Button(BUTTON_1)) {
-        if (!button1_pressed) {
-            button1_pressed = 1;
-            // Find available bullet slot
-            for (int i = 0; i < MAX_BULLETS; i++) {
+
+        // Find available bullet slot
+        for (int i = 0; i < MAX_BULLETS; i++) {
+            if (!player_bullets[i].active) {
+                player_bullets[i].x = player.x + PLAYER_SIZE / 2;
+                player_bullets[i].y = player.y;
+                player_bullets[i].active = 1;
+                player_bullets[i].speed = 3;
+                player_bullets[i].dx = 0;
+                player_bullets[i].dy = -1;  // Move up
+                break;
+            }
+        }
+    } 
+
+    if (Get_Button(BUTTON_2)) {
+        // Shoot 8 bullets in different directions
+        int directions[8][2] = {
+            {0, -1},   // Up
+            {1, -1},   // Up-Right
+            {1, 0},    // Right
+            {1, 1},    // Down-Right
+            {0, 1},    // Down
+            {-1, 1},   // Down-Left
+            {-1, 0},   // Left
+            {-1, -1}   // Up-Left
+        };
+        
+        int bullets_fired = 0;
+        for (int dir = 0; dir < 8 && bullets_fired < 8; dir++) {
+            for (int i = 0; i < MAX_BULLETS && bullets_fired < 8; i++) {
                 if (!player_bullets[i].active) {
                     player_bullets[i].x = player.x + PLAYER_SIZE / 2;
                     player_bullets[i].y = player.y;
                     player_bullets[i].active = 1;
-                    player_bullets[i].speed = 3;
-                    player_bullets[i].dx = 0;
-                    player_bullets[i].dy = -1;  // Move up
+                    player_bullets[i].speed = 2;
+                    player_bullets[i].dx = directions[dir][0];
+                    player_bullets[i].dy = directions[dir][1];
+                    bullets_fired++;
                     break;
                 }
             }
         }
-    } else {
-        button1_pressed = 0;
-    }
-
-    // Handle shooting - BUTTON_2 (spread shot)
-    static int button2_pressed = 0;
-    if (Get_Button(BUTTON_2)) {
-        if (!button2_pressed) {
-            button2_pressed = 1;
-            
-            // Shoot 8 bullets in different directions
-            int directions[8][2] = {
-                {0, -1},   // Up
-                {1, -1},   // Up-Right
-                {1, 0},    // Right
-                {1, 1},    // Down-Right
-                {0, 1},    // Down
-                {-1, 1},   // Down-Left
-                {-1, 0},   // Left
-                {-1, -1}   // Up-Left
-            };
-            
-            int bullets_fired = 0;
-            for (int dir = 0; dir < 8 && bullets_fired < 8; dir++) {
-                for (int i = 0; i < MAX_BULLETS && bullets_fired < 8; i++) {
-                    if (!player_bullets[i].active) {
-                        player_bullets[i].x = player.x + PLAYER_SIZE / 2;
-                        player_bullets[i].y = player.y;
-                        player_bullets[i].active = 1;
-                        player_bullets[i].speed = 2;
-                        player_bullets[i].dx = directions[dir][0];
-                        player_bullets[i].dy = directions[dir][1];
-                        bullets_fired++;
-                        break;
-                    }
-                }
-            }
-        }
-    } else {
-        button2_pressed = 0;
     }
     
     // Draw player
