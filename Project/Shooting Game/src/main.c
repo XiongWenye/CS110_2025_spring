@@ -24,8 +24,8 @@ typedef struct {
     int x, y;
     int active;
     int speed;
+    int dx, dy;  // Direction vectors (new fields)
 } Bullet;
-
 // Enemy structure
 typedef struct {
     int x, y;
@@ -56,7 +56,7 @@ void IO_init(void) {
   Lcd_Init(); // LCD init
 }
 
-// Initialize game objects
+// Initialize game objects 
 void init_game(void) {
     // Initialize player
     player.x = SCREEN_WIDTH / 2;
@@ -66,6 +66,8 @@ void init_game(void) {
     // Initialize bullets
     for (int i = 0; i < MAX_BULLETS; i++) {
         player_bullets[i].active = 0;
+        player_bullets[i].dx = 0;  // 初始化方向
+        player_bullets[i].dy = 0;
     }
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
         enemy_bullets[i].active = 0;
@@ -122,7 +124,7 @@ void update_player(void) {
     }
     
     // Handle shooting
-    if (Get_Button(JOY_CTR)) {
+    if (Get_Button(BUTTON_1)) {
         // Find available bullet slot
         for (int i = 0; i < MAX_BULLETS; i++) {
             if (!player_bullets[i].active) {
@@ -133,6 +135,46 @@ void update_player(void) {
                 break;
             }
         }
+    }
+
+    // BUTTON_2 shoots bullets in all directions like a circle
+    static int button2_debounce = 0;
+    if (Get_Button(BUTTON_2)) {
+        if (!button2_debounce) {
+            button2_debounce = 1;
+            
+            // Shoot 8 bullets in different directions (circle pattern)
+            int directions[8][2] = {
+                {0, -1},   // Up
+                {1, -1},   // Up-Right
+                {1, 0},    // Right
+                {1, 1},    // Down-Right
+                {0, 1},    // Down
+                {-1, 1},   // Down-Left
+                {-1, 0},   // Left
+                {-1, -1}   // Up-Left
+            };
+            
+            int bullets_fired = 0;
+            for (int dir = 0; dir < 8 && bullets_fired < 8; dir++) {
+                // Find available bullet slot
+                for (int i = 0; i < MAX_BULLETS && bullets_fired < 8; i++) {
+                    if (!player_bullets[i].active) {
+                        player_bullets[i].x = player.x + PLAYER_SIZE / 2;
+                        player_bullets[i].y = player.y;
+                        player_bullets[i].active = 1;
+                        player_bullets[i].speed = 2;
+                        // Store direction in unused fields (we'll need to modify the structure)
+                        player_bullets[i].dx = directions[dir][0];
+                        player_bullets[i].dy = directions[dir][1];
+                        bullets_fired++;
+                        break;
+                    }
+                }
+            }
+        }
+    } else {
+        button2_debounce = 0;
     }
     
     // Draw player
@@ -149,15 +191,24 @@ void update_player_bullets(void) {
             // Clear old position
             clear_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
             
-            // Move bullet up
-            player_bullets[i].y -= player_bullets[i].speed;
+            // Move bullet based on direction
+            if (player_bullets[i].dx == 0 && player_bullets[i].dy == 0) {
+                // Regular bullet (BUTTON_1) - moves straight up
+                player_bullets[i].y -= player_bullets[i].speed;
+            } else {
+                // Directional bullet (BUTTON_2) - moves in specified direction
+                player_bullets[i].x += player_bullets[i].dx * player_bullets[i].speed;
+                player_bullets[i].y += player_bullets[i].dy * player_bullets[i].speed;
+            }
             
             // Check if bullet is off screen
-            if (player_bullets[i].y < 0) {
+            if (player_bullets[i].y < 0 || player_bullets[i].y > SCREEN_HEIGHT ||
+                player_bullets[i].x < 0 || player_bullets[i].x > SCREEN_WIDTH) {
                 player_bullets[i].active = 0;
             } else {
                 // Draw bullet
-                draw_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE, WHITE);
+                u16 bullet_color = (player_bullets[i].dx == 0 && player_bullets[i].dy == 0) ? WHITE : CYAN;
+                draw_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE, bullet_color);
             }
         }
     }

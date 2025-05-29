@@ -175,7 +175,7 @@ reset_button_state:
     jal Get_Button
     bnez a0, keep_button_state
     
-    li a0, 2         // JOY_UP  
+    li a0, 3         // JOY_UP  
     jal Get_Button
     bnez a0, keep_button_state
     
