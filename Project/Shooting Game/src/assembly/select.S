@@ -1,13 +1,11 @@
 .section .data
-title_char1:    .asciz "GAME"
-title_char2:    .asciz "SELECT"
 title_char3:    .asciz ""
 easy_str:     .asciz "EASY"
 normal_str:   .asciz "NORMAL" 
 hard_str:     .asciz "HARD"
 cursor_str:   .asciz ">"
 fps_str:      .asciz "FPS:"
-space_str:    .asciz "   "
+space_str:    .asciz " "
 
 .section .text
 .globl select
@@ -35,20 +33,36 @@ select:
     // Draw static elements
     jal draw_static_elements
     
+    // Force initial cursor draw
+    j force_cursor_draw
+    
 selection_loop:
     // Only redraw cursor if position changed
     bne s0, s2, redraw_cursor
     j check_input
     
+force_cursor_draw:
 redraw_cursor:
     // Erase old cursor position (if not first draw)
     li t2, -1
     beq s2, t2, skip_erase
     li a0, 10        // x position for cursor
-    li a1, 25        // base y position
-    li t0, 15        // offset per option
-    mul t1, s2, t0   // calculate old offset
-    add a1, a1, t1   // old y position
+    
+    // Calculate old cursor Y position
+    beqz s2, old_cursor_easy     // if s2 == 0 (EASY)
+    li t0, 1
+    beq s2, t0, old_cursor_normal // if s2 == 1 (NORMAL)
+    li a1, 55        // s2 == 2 (HARD)
+    j erase_old_cursor
+    
+old_cursor_easy:
+    li a1, 25        // EASY Y position
+    j erase_old_cursor
+    
+old_cursor_normal:
+    li a1, 40        // NORMAL Y position
+    
+erase_old_cursor:
     la a2, space_str // " " to erase
     li a3, 0         // BLACK color
     jal LCD_ShowString
@@ -56,10 +70,22 @@ redraw_cursor:
 skip_erase:
     // Draw new cursor
     li a0, 10        // x position for cursor
-    li a1, 25        // base y position
-    li t0, 15        // offset per option
-    mul t1, s0, t0   // calculate new offset
-    add a1, a1, t1   // new y position
+    
+    // Calculate new cursor Y position
+    beqz s0, new_cursor_easy     // if s0 == 0 (EASY)
+    li t0, 1
+    beq s0, t0, new_cursor_normal // if s0 == 1 (NORMAL)
+    li a1, 55        // s0 == 2 (HARD)
+    j draw_new_cursor
+    
+new_cursor_easy:
+    li a1, 25        // EASY Y position
+    j draw_new_cursor
+    
+new_cursor_normal:
+    li a1, 40        // NORMAL Y position
+    
+draw_new_cursor:
     la a2, cursor_str // ">"
     li a3, 31        // BLUE color
     jal LCD_ShowString
@@ -130,19 +156,6 @@ keep_button_state:
     j selection_loop
     
 draw_static_elements:
-    // Draw title - use regular strings instead of Chinese
-    li a0, 50        // x - centered
-    li a1, 5         // y - top
-    la a2, title_char1  // "GAME"
-    li a3, 65535     // WHITE
-    jal LCD_ShowString
-    
-    li a0, 45        // x
-    li a1, 15        // y
-    la a2, title_char2  // "SELECT"
-    li a3, 65535     // WHITE
-    jal LCD_ShowString
-
     // Draw options - safe coordinates
     li a0, 20        // x
     li a1, 25        // y
