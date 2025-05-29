@@ -536,8 +536,7 @@ void update_enemy_bullets_optimized(void) {
         if (enemy_bullets[i].active) active_enemy_bullets++;
     }
     
-    // 敌人射击逻辑 - 只有子弹数量不太多时才射击
-    if (active_enemy_bullets < 100) { // 限制敌人子弹数量
+    if (active_enemy_bullets < 10000) { // 限制敌人子弹数量
         for (int i = 0; i < MAX_ENEMIES; i++) {
             if (!enemies[i].active) continue;
             
