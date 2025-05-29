@@ -40,7 +40,6 @@ Player player;
 Bullet player_bullets[MAX_BULLETS];
 Bullet enemy_bullets[MAX_ENEMY_BULLETS];
 Enemy enemies[MAX_ENEMIES];
-int game_running = 1;
 
 void Inp_init(void) {
   rcu_periph_clock_enable(RCU_GPIOA);
@@ -105,8 +104,6 @@ void init_game(void) {
         enemies[i].speed = 1;
         enemies[i].shoot_timer = 0;
     }
-    
-    game_running = 1;
 }
 
 // Handle player input and movement
@@ -240,8 +237,50 @@ void update_player_bullets(void) {
     }
 }
 
-// Update enemies (simplified)
+// Update enemies with movement and shooting
 void update_enemies(void) {
+    static int enemy_direction = 1;
+    static int move_timer = 0;
+    
+    move_timer++;
+    
+    // Move enemies every 30 frames
+    if (move_timer >= 30) {
+        move_timer = 0;
+        
+        int should_move_down = 0;
+        
+        // Check if any enemy hits the edge
+        for (int i = 0; i < MAX_ENEMIES; i++) {
+            if (enemies[i].active) {
+                if ((enemies[i].x <= 0 && enemy_direction < 0) || 
+                    (enemies[i].x >= SCREEN_WIDTH - ENEMY_SIZE && enemy_direction > 0)) {
+                    should_move_down = 1;
+                    break;
+                }
+            }
+        }
+        
+        // Move enemies
+        for (int i = 0; i < MAX_ENEMIES; i++) {
+            if (enemies[i].active) {
+                // Clear old position
+                clear_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE);
+                
+                if (should_move_down) {
+                    enemies[i].y += 10;  // Move down
+                } else {
+                    enemies[i].x += enemy_direction * 5;  // Move horizontally
+                }
+            }
+        }
+        
+        if (should_move_down) {
+            enemy_direction *= -1;  // Reverse direction
+        }
+    }
+    
+    // Draw enemies
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (enemies[i].active) {
             draw_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE, RED);
@@ -249,24 +288,94 @@ void update_enemies(void) {
     }
 }
 
-// Update enemy bullets (simplified)
+// Update enemy bullets system
 void update_enemy_bullets(void) {
-    // Simple enemy bullet system - 暂时禁用以避免复杂性
-    /*
+    // Enemy shooting logic
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        if (enemies[i].active) {
+            enemies[i].shoot_timer++;
+            // Shoot every 180 frames (about 3 seconds at 60 FPS)
+            if (enemies[i].shoot_timer >= 180) {
+                enemies[i].shoot_timer = 0;
+                
+                // Find available bullet slot
+                for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
+                    if (!enemy_bullets[j].active) {
+                        enemy_bullets[j].x = enemies[i].x + ENEMY_SIZE / 2;
+                        enemy_bullets[j].y = enemies[i].y + ENEMY_SIZE;
+                        enemy_bullets[j].active = 1;
+                        enemy_bullets[j].speed = 1;
+                        enemy_bullets[j].dx = 0;
+                        enemy_bullets[j].dy = 1;  // Move down
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Update enemy bullets
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
         if (enemy_bullets[i].active) {
+            // Clear old position
             clear_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
             
-            enemy_bullets[i].y += enemy_bullets[i].speed;
+            // Move bullet
+            enemy_bullets[i].x += enemy_bullets[i].dx * enemy_bullets[i].speed;
+            enemy_bullets[i].y += enemy_bullets[i].dy * enemy_bullets[i].speed;
             
-            if (enemy_bullets[i].y > SCREEN_HEIGHT) {
+            // Check if bullet is off screen
+            if (enemy_bullets[i].y > SCREEN_HEIGHT || enemy_bullets[i].x < 0 || 
+                enemy_bullets[i].x > SCREEN_WIDTH) {
                 enemy_bullets[i].active = 0;
             } else {
+                // Draw bullet
                 draw_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE, YELLOW);
             }
         }
     }
-    */
+}
+
+// Check collisions between bullets and targets
+void check_collisions(void) {
+    // Check player bullets hitting enemies
+    for (int i = 0; i < MAX_BULLETS; i++) {
+        if (player_bullets[i].active) {
+            for (int j = 0; j < MAX_ENEMIES; j++) {
+                if (enemies[j].active) {
+                    // Simple collision detection
+                    if (player_bullets[i].x >= enemies[j].x && 
+                        player_bullets[i].x < enemies[j].x + ENEMY_SIZE &&
+                        player_bullets[i].y >= enemies[j].y && 
+                        player_bullets[i].y < enemies[j].y + ENEMY_SIZE) {
+                        
+                        // Hit! Remove bullet and enemy
+                        player_bullets[i].active = 0;
+                        enemies[j].active = 0;
+                        
+                        // Clear enemy from screen
+                        clear_rect(enemies[j].x, enemies[j].y, ENEMY_SIZE, ENEMY_SIZE);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Check enemy bullets hitting player
+    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
+        if (enemy_bullets[i].active) {
+            // Simple collision detection with player
+            if (enemy_bullets[i].x >= player.x && 
+                enemy_bullets[i].x < player.x + PLAYER_SIZE &&
+                enemy_bullets[i].y >= player.y && 
+                enemy_bullets[i].y < player.y + PLAYER_SIZE) {
+                
+                // Hit! Remove bullet (could add player damage system here)
+                enemy_bullets[i].active = 0;
+                // For now, just remove the bullet - you could add lives/health system
+            }
+        }
+    }
 }
 
 // Main game loop
@@ -276,24 +385,16 @@ void game_loop(int difficulty) {
     // Clear screen
     LCD_Clear(BLACK);
     
-    int frame_counter = 0;
-    
-    while (game_running) {
+    while (1) {  // Infinite loop - no exit mechanism
         // Update game objects
         update_player();
         update_player_bullets();
         update_enemies();
-        // update_enemy_bullets(); // 暂时禁用
+        update_enemy_bullets();
+        check_collisions();
         
-        // Frame rate control - 更慢的帧率
-        delay_1ms(100); // 10 FPS for stability
-        
-        frame_counter++;
-        
-        // Exit condition - 添加帧计数器避免立即退出
-        if (frame_counter > 10 && Get_Button(JOY_CTR)) {
-            game_running = 0;
-        }
+        // Frame rate control - restore normal frame rate
+        delay_1ms(16); // Approximately 60 FPS
     }
 }
 
