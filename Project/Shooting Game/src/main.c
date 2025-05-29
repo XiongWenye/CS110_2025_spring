@@ -244,7 +244,7 @@ void spawn_random_enemy(void) {
             enemies[i].y = (simple_rand() % 20 + 5);  // Spawn above screen
             enemies[i].active = 1;
             enemies[i].speed = -1 + simple_rand() % 3;  // Random speed 1-3
-            enemies[i].shoot_timer = simple_rand() % 60;  // Random initial timer
+            enemies[i].shoot_timer = simple_rand() % 60 + 20;  // Random initial timer
             enemies[i].type = simple_rand() % 4;  // 四种类型的敌人 (0-3)
             break;
         }
