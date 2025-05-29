@@ -57,6 +57,27 @@ void IO_init(void) {
   Lcd_Init(); // LCD init
 }
 
+// Safe LCD drawing function with bounds checking
+void safe_draw_pixel(int x, int y, u16 color) {
+    if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT) {
+        LCD_DrawPoint(x, y, color);
+    }
+}
+
+// Draw a filled rectangle with bounds checking
+void draw_rect(int x, int y, int width, int height, u16 color) {
+    for (int i = 0; i < width; i++) {
+        for (int j = 0; j < height; j++) {
+            safe_draw_pixel(x + i, y + j, color);
+        }
+    }
+}
+
+// Clear a rectangle (erase)
+void clear_rect(int x, int y, int width, int height) {
+    draw_rect(x, y, width, height, BLACK);
+}
+
 // Initialize game objects 
 void init_game(void) {
     // Initialize player
@@ -67,7 +88,7 @@ void init_game(void) {
     // Initialize bullets
     for (int i = 0; i < MAX_BULLETS; i++) {
         player_bullets[i].active = 0;
-        player_bullets[i].dx = 0;  // 初始化方向
+        player_bullets[i].dx = 0;
         player_bullets[i].dy = 0;
     }
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
@@ -88,29 +109,12 @@ void init_game(void) {
     game_running = 1;
 }
 
-// Draw a filled rectangle (simple pixel representation)
-void draw_rect(int x, int y, int width, int height, u16 color) {
-    for (int i = 0; i < width; i++) {
-        for (int j = 0; j < height; j++) {
-            if (x + i < SCREEN_WIDTH && y + j < SCREEN_HEIGHT && 
-                x + i >= 0 && y + j >= 0) {
-                LCD_DrawPoint(x + i, y + j, color);
-            }
-        }
-    }
-}
-
-// Clear a rectangle (erase)
-void clear_rect(int x, int y, int width, int height) {
-    draw_rect(x, y, width, height, BLACK);
-}
-
 // Handle player input and movement
 void update_player(void) {
     static int prev_x = -1, prev_y = -1;
     
     // Clear previous player position
-    if (prev_x != -1) {
+    if (prev_x >= 0 && prev_y >= 0) {
         clear_rect(prev_x, prev_y, PLAYER_SIZE, PLAYER_SIZE);
     }
     
@@ -128,11 +132,11 @@ void update_player(void) {
         player.y += player.speed;
     }
     
-    // Handle shooting - BUTTON_1 with debounce
-    static int button1_debounce = 0;
+    // Handle shooting - BUTTON_1 (single bullet)
+    static int button1_pressed = 0;
     if (Get_Button(BUTTON_1)) {
-        if (!button1_debounce) {
-            button1_debounce = 1;
+        if (!button1_pressed) {
+            button1_pressed = 1;
             // Find available bullet slot
             for (int i = 0; i < MAX_BULLETS; i++) {
                 if (!player_bullets[i].active) {
@@ -140,23 +144,23 @@ void update_player(void) {
                     player_bullets[i].y = player.y;
                     player_bullets[i].active = 1;
                     player_bullets[i].speed = 3;
-                    player_bullets[i].dx = 0;  // 重要：初始化方向为0
-                    player_bullets[i].dy = 0;  // 重要：初始化方向为0
+                    player_bullets[i].dx = 0;
+                    player_bullets[i].dy = -1;  // Move up
                     break;
                 }
             }
         }
     } else {
-        button1_debounce = 0;
+        button1_pressed = 0;
     }
 
-    // BUTTON_2 shoots bullets in all directions like a circle
-    static int button2_debounce = 0;
+    // Handle shooting - BUTTON_2 (spread shot)
+    static int button2_pressed = 0;
     if (Get_Button(BUTTON_2)) {
-        if (!button2_debounce) {
-            button2_debounce = 1;
+        if (!button2_pressed) {
+            button2_pressed = 1;
             
-            // Shoot 8 bullets in different directions (circle pattern)
+            // Shoot 8 bullets in different directions
             int directions[8][2] = {
                 {0, -1},   // Up
                 {1, -1},   // Up-Right
@@ -170,14 +174,12 @@ void update_player(void) {
             
             int bullets_fired = 0;
             for (int dir = 0; dir < 8 && bullets_fired < 8; dir++) {
-                // Find available bullet slot
                 for (int i = 0; i < MAX_BULLETS && bullets_fired < 8; i++) {
                     if (!player_bullets[i].active) {
                         player_bullets[i].x = player.x + PLAYER_SIZE / 2;
                         player_bullets[i].y = player.y;
                         player_bullets[i].active = 1;
                         player_bullets[i].speed = 2;
-                        // Store direction
                         player_bullets[i].dx = directions[dir][0];
                         player_bullets[i].dy = directions[dir][1];
                         bullets_fired++;
@@ -187,7 +189,7 @@ void update_player(void) {
             }
         }
     } else {
-        button2_debounce = 0;
+        button2_pressed = 0;
     }
     
     // Draw player
@@ -204,61 +206,25 @@ void update_player_bullets(void) {
             // Clear old position
             clear_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
             
-            // Move bullet based on direction
-            if (player_bullets[i].dx == 0 && player_bullets[i].dy == 0) {
-                // Regular bullet (BUTTON_1) - moves straight up
-                player_bullets[i].y -= player_bullets[i].speed;
-            } else {
-                // Directional bullet (BUTTON_2) - moves in specified direction
-                player_bullets[i].x += player_bullets[i].dx * player_bullets[i].speed;
-                player_bullets[i].y += player_bullets[i].dy * player_bullets[i].speed;
-            }
+            // Move bullet
+            player_bullets[i].x += player_bullets[i].dx * player_bullets[i].speed;
+            player_bullets[i].y += player_bullets[i].dy * player_bullets[i].speed;
             
             // Check if bullet is off screen
             if (player_bullets[i].y < 0 || player_bullets[i].y > SCREEN_HEIGHT ||
                 player_bullets[i].x < 0 || player_bullets[i].x > SCREEN_WIDTH) {
                 player_bullets[i].active = 0;
             } else {
-                // Draw bullet with bounds checking
-                if (player_bullets[i].x >= 0 && player_bullets[i].x < SCREEN_WIDTH &&
-                    player_bullets[i].y >= 0 && player_bullets[i].y < SCREEN_HEIGHT) {
-                    u16 bullet_color = (player_bullets[i].dx == 0 && player_bullets[i].dy == 0) ? WHITE : CYAN;
-                    draw_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE, bullet_color);
-                }
+                // Draw bullet
+                u16 bullet_color = (player_bullets[i].dy == -1 && player_bullets[i].dx == 0) ? WHITE : CYAN;
+                draw_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE, bullet_color);
             }
         }
     }
 }
 
-// Update enemies
+// Update enemies (simplified)
 void update_enemies(void) {
-    static int enemy_direction = 1;
-    static int move_timer = 0;
-    
-    move_timer++;
-    
-    // Move enemies every 30 frames
-    if (move_timer >= 30) {
-        move_timer = 0;
-        
-        for (int i = 0; i < MAX_ENEMIES; i++) {
-            if (enemies[i].active) {
-                // Clear old position
-                clear_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE);
-                
-                // Move horizontally
-                enemies[i].x += enemy_direction * enemies[i].speed * 5;
-                
-                // Check boundaries and move down
-                if (enemies[i].x <= 0 || enemies[i].x >= SCREEN_WIDTH - ENEMY_SIZE) {
-                    enemy_direction *= -1;
-                    enemies[i].y += 10;
-                }
-            }
-        }
-    }
-    
-    // Draw enemies
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (enemies[i].active) {
             draw_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE, RED);
@@ -266,50 +232,19 @@ void update_enemies(void) {
     }
 }
 
-// Update enemy shooting
+// Update enemy bullets (simplified)
 void update_enemy_bullets(void) {
-    // Enemy shooting logic
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        if (enemies[i].active) {
-            enemies[i].shoot_timer++;
-            // Shoot every 120 frames (about 2 seconds at 60 FPS)
-            if (enemies[i].shoot_timer >= 120) {
-                enemies[i].shoot_timer = 0;
-                
-                // Find available bullet slot
-                for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
-                    if (!enemy_bullets[j].active) {
-                        enemy_bullets[j].x = enemies[i].x + ENEMY_SIZE / 2;
-                        enemy_bullets[j].y = enemies[i].y + ENEMY_SIZE;
-                        enemy_bullets[j].active = 1;
-                        enemy_bullets[j].speed = 2;
-                        enemy_bullets[j].dx = 0;
-                        enemy_bullets[j].dy = 1;  // 敌人子弹向下
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    
-    // Update enemy bullets
+    // Simple enemy bullet system
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
         if (enemy_bullets[i].active) {
-            // Clear old position
             clear_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
             
-            // Move bullet down
             enemy_bullets[i].y += enemy_bullets[i].speed;
             
-            // Check if bullet is off screen
             if (enemy_bullets[i].y > SCREEN_HEIGHT) {
                 enemy_bullets[i].active = 0;
             } else {
-                // Draw bullet with bounds checking
-                if (enemy_bullets[i].x >= 0 && enemy_bullets[i].x < SCREEN_WIDTH &&
-                    enemy_bullets[i].y >= 0 && enemy_bullets[i].y < SCREEN_HEIGHT) {
-                    draw_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE, YELLOW);
-                }
+                draw_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE, YELLOW);
             }
         }
     }
@@ -329,69 +264,23 @@ void game_loop(int difficulty) {
         update_enemies();
         update_enemy_bullets();
         
-        // Small delay to control frame rate
-        delay_1ms(16); // Approximately 60 FPS
+        // Frame rate control
+        delay_1ms(50); // Slower frame rate for stability
         
-        // Exit condition - use JOY_CTR to exit game
+        // Exit condition
         if (Get_Button(JOY_CTR)) {
             game_running = 0;
         }
     }
 }
 
-void Board_self_test(void) {
-  while (1) {
-    LCD_ShowString(60, 25, (u8*)"TEST (25s)", WHITE);
-    if (Get_Button(JOY_LEFT)) {
-      LCD_ShowString(5, 25, (u8*)"L", BLUE);
-    }
-    if (Get_Button(JOY_DOWN)) {
-      LCD_ShowString(25, 45, (u8*)"D", BLUE);
-      LCD_ShowString(60, 25, (u8*)"TEST", GREEN);
-    }
-    if (Get_Button(JOY_UP)) {
-      LCD_ShowString(25, 5, (u8*)"U", BLUE);
-    }
-    if (Get_Button(JOY_RIGHT)) {
-      LCD_ShowString(45, 25, (u8*)"R", BLUE);
-    }
-    if (Get_Button(JOY_CTR)) {
-      LCD_ShowString(25, 25, (u8*)"C", BLUE);
-    }
-    if (Get_Button(BUTTON_1)) {
-      LCD_ShowString(60, 5, (u8*)"SW1", BLUE);
-    }
-    if (Get_Button(BUTTON_2)) {
-      LCD_ShowString(60, 45, (u8*)"SW2", BLUE);
-    }
-    draw();
-    delay_1ms(10);
-    LCD_Clear(BLACK);
-  }
-}
-
 int main(void) {
   IO_init();
-  timer_parameter_struct timer_initpara;
-  timer_init(TIMER1, &timer_initpara);  // Initialize the timer for FPS calculation
   
   int difficulty = select();  // Call assembly function
   
-  // Handle the returned difficulty level and start game
-  switch(difficulty) {
-      case 0:
-          // Start easy mode
-          game_loop(0);
-          break;
-      case 1: 
-          // Start normal mode
-          game_loop(1);
-          break;
-      case 2:
-          // Start hard mode
-          game_loop(2);
-          break;
-  }
+  // Start game based on difficulty
+  game_loop(difficulty);
   
   return 0;
 }
