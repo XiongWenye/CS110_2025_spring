@@ -1,0 +1,6 @@
+#ifndef SHOOTING_GAME_ASSEMBLY_SELECT_H
+#define SHOOTING_GAME_ASSEMBLY_SELECT_H
+
+void select();
+
+#endif

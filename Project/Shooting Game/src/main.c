@@ -1,6 +1,7 @@
 #include "lcd/lcd.h"
 #include "utils.h"
 #include "assembly/example.h"
+#include "assembly/select.h"
 
 void Inp_init(void) {
   rcu_periph_clock_enable(RCU_GPIOA);
@@ -48,7 +49,27 @@ void Board_self_test(void) {
   }
 }
 
+
+
+// ...existing code...
+
 int main(void) {
   IO_init();
-  Board_self_test();
+  
+  int difficulty = select();  // Call assembly function
+  
+  // Handle the returned difficulty level
+  switch(difficulty) {
+      case 0:
+          // Start easy mode
+          break;
+      case 1: 
+          // Start normal mode
+          break;
+      case 2:
+          // Start hard mode
+          break;
+  }
+  
+  return 0;
 }
