@@ -5,16 +5,16 @@ The system uses a 32-bit virtual address space with byte-addressable memory and 
     \part[8] Answer the following questions. Specify bit ranges as [high:low] with zero-based indexing (bit 0 = LSB). [8 points]
     \vspace{0.5cm} 
     
-    The range of bits for the VPN (virtual page number) \blank[3cm]{}.
+    The range of bits for the VPN (virtual page number) \blank[3cm]{[31:12]}.
     \vspace{0.5cm} 
     
-    The range of bits for the offset within a page \blank[3cm]{}.
+    The range of bits for the offset within a page \blank[3cm]{[11:0]}.
     \vspace{0.5cm} 
     
-    The range of bits for the TLB tag \blank[3cm]{}.
+    The range of bits for the TLB tag \blank[3cm]{[31:14]}.
     \vspace{0.5cm} 
     
-    The range of bits for the TLB set number \blank[3cm]{}.
+    The range of bits for the TLB set number \blank[3cm]{[13:12]}.
     \vspace{0.5cm} 
     
     \part [4] Assume the TLB is initially empty, and the accessed VPNs are $\mathtt{4, 17, 20, 8, 21, 5, 17, 25, 29}$ in sequence.  Complete Final TLB State (Table ~\ref{tab:tlb_state_1}). [4 points]
@@ -28,10 +28,10 @@ The system uses a 32-bit virtual address space with byte-addressable memory and 
         \hline % 
         \multicolumn{1}{|c|}{\textbf{Index}} & \multicolumn{1}{c|}{\textbf{VPN}} \\ 
         \hline
-        0 & \\ \hline
-        1 & \\ \hline
-        2 & \\ \hline
-        3 & \\ \hline
+        0 & 17\\ \hline
+        1 & 5\\ \hline
+        2 & 25\\ \hline
+        3 & 29\\ \hline
         \end{tabular}
     \end{table}
     

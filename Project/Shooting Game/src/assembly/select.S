@@ -64,15 +64,15 @@ selection_loop:
     mv s4, t2        // Update last FPS update time
     
     // Clear old FPS display
-    li a0, 42        // x (after "FPS:")
-    li a1, 70       // y
+    li a0, 30        // x (after "FPS:") - adjusted for 160px width
+    li a1, 70        // y
     la a2, space_str // "   " to clear old numbers
     li a3, 0         // BLACK color
     jal LCD_ShowString
     
     // Display new FPS
-    li a0, 42        // x (after "FPS:")
-    li a1, 70       // y
+    li a0, 30        // x (after "FPS:") - adjusted for 160px width
+    li a1, 70        // y
     mv a2, s5        // FPS value
     li a3, 3         // 3 digits
     li a4, 65535     // WHITE
@@ -87,9 +87,9 @@ redraw_cursor:
     // Erase old cursor position
     li t2, -1       // Load -1 into a temporary register
     beq s2, t2, skip_erase  // Skip if first draw
-    li a0, 25        // x position for cursor
-    li a1, 15        // base y position
-    li t0, 20        // offset per option
+    li a0, 15        // x position for cursor - adjusted for smaller screen
+    li a1, 25        // base y position - adjusted
+    li t0, 12        // offset per option - smaller spacing for 80px height
     mul t1, s2, t0   // calculate old offset
     add a1, a1, t1   // old y position
     la a2, space_str // " " to erase
@@ -98,9 +98,9 @@ redraw_cursor:
     
 skip_erase:
     // Draw new cursor
-    li a0, 25        // x position for cursor
-    li a1, 15        // base y position
-    li t0, 20        // offset per option
+    li a0, 15        // x position for cursor - adjusted for smaller screen
+    li a1, 25        // base y position - adjusted
+    li t0, 12        // offset per option - smaller spacing for 80px height
     mul t1, s0, t0   // calculate new offset
     add a1, a1, t1   // new y position
     la a2, cursor_str // ">"
@@ -173,29 +173,47 @@ keep_button_state:
     j selection_loop
     
 draw_static_elements:
+    // Draw title characters (Chinese characters) - centered for 160px width
+    li a0, 50        // x - centered position
+    li a1, 5         // y - top of screen
+    la a2, title_char1  // "席"
+    li a3, 65535     // WHITE
+    jal LCD_ShowChinese
+    
+    li a0, 70        // x
+    li a1, 5         // y
+    la a2, title_char2  // "文"
+    li a3, 65535     // WHITE
+    jal LCD_ShowChinese
+    
+    li a0, 90        // x
+    li a1, 5         // y
+    la a2, title_char3  // "义"
+    li a3, 65535     // WHITE
+    jal LCD_ShowChinese
 
-    // Draw options
-    li a0, 40        // x
-    li a1, 15        // y
+    // Draw options - adjusted for 160x80 screen
+    li a0, 25        // x - adjusted for smaller screen width
+    li a1, 25        // y - adjusted for smaller screen height
     la a2, easy_str  // "EASY"
     li a3, 65535     // WHITE
     jal LCD_ShowString
     
-    li a0, 40        // x
-    li a1, 35        // y
+    li a0, 25        // x
+    li a1, 37        // y - closer spacing for 80px height
     la a2, normal_str // "NORMAL"
     li a3, 65535     // WHITE
     jal LCD_ShowString
     
-    li a0, 40        // x
-    li a1, 55        // y
+    li a0, 25        // x
+    li a1, 49        // y - closer spacing for 80px height
     la a2, hard_str  // "HARD"
     li a3, 65535     // WHITE
     jal LCD_ShowString
     
-    // Draw static FPS label
-    li a0, 10        // x
-    li a1, 70      // y
+    // Draw static FPS label - positioned at bottom
+    li a0, 5         // x - left edge
+    li a1, 70        // y - bottom area
     la a2, fps_str   // "FPS:"
     li a3, 65535     // WHITE
     jal LCD_ShowString
