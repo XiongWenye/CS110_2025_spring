@@ -4,7 +4,7 @@
 #include "assembly/select.h"
 
 // Game constants - 大幅增加数量
-#define SCREEN_WIDTH 160
+#define SCREEN_WIDTH 140
 #define SCREEN_HEIGHT 80
 #define PLAYER_SIZE 4
 #define ENEMY_SIZE 3
@@ -53,6 +53,9 @@ static int displayed_fps = 60;
 static int displayed_entities = 0;
 static int entity_update_counter = 0;
 static unsigned long frame_counter = 0;
+// 添加这些变量来避免频闪
+static int last_displayed_fps = -1;
+static int last_displayed_entities = -1;
 
 // Random number generator state
 static unsigned int rand_seed = 12345;
@@ -83,77 +86,79 @@ unsigned long get_time_ms(void) {
     return frame_counter * 16; // Assume 16ms per frame
 }
 
-// Update FPS counter
+
+
+
+
+// 修改FPS计数器函数 - 使用真实时间测量
 void update_fps_counter(void) {
-    static unsigned long last_time = 0;
-    unsigned long current_time = get_time_ms();
+    static unsigned long last_frame_time = 0;
+    static unsigned long fps_update_timer = 0;
     
-    // Store frame time
-    frame_times[frame_index] = current_time - last_time;
-    frame_index = (frame_index + 1) % FPS_SAMPLE_FRAMES;
-    last_time = current_time;
+    // 简单的时间测量（这里需要根据你的硬件调整）
+    unsigned long current_time = frame_counter;
     
-    // Calculate average FPS every FPS_SAMPLE_FRAMES
-    if (frame_index == 0) {
-        unsigned long total_time = 0;
-        for (int i = 0; i < FPS_SAMPLE_FRAMES; i++) {
-            total_time += frame_times[i];
-        }
+    fps_update_timer++;
+    
+    // 每30帧更新一次FPS显示（减少闪烁）
+    if (fps_update_timer >= 30) {
+        fps_update_timer = 0;
         
-        if (total_time > 0) {
-            displayed_fps = (FPS_SAMPLE_FRAMES * 1000) / total_time;
-            if (displayed_fps > 99) displayed_fps = 99; // Cap at 99 for display
+        // 计算实际FPS基于30帧的时间
+        unsigned long elapsed_frames = current_time - last_frame_time;
+        if (elapsed_frames > 0) {
+            // 假设每帧约16ms，30帧 = 480ms
+            displayed_fps = (30 * 1000) / (elapsed_frames * 16);
+            if (displayed_fps > 99) displayed_fps = 99;
+            if (displayed_fps < 1) displayed_fps = 1;
         }
+        last_frame_time = current_time;
     }
 }
 
-// Count active entities
-int count_active_entities(void) {
-    int count = 1; // Player counts as 1
-    
-    for (int i = 0; i < MAX_BULLETS; i++) {
-        if (player_bullets[i].active) count++;
-    }
-    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
-        if (enemy_bullets[i].active) count++;
-    }
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        if (enemies[i].active) count++;
-    }
-    
-    return count;
-}
-
-// Update entity counter (less frequently for performance)
+// 修改实体计数器函数 - 减少更新频率
 void update_entity_counter(void) {
     entity_update_counter++;
-    if (entity_update_counter >= ENTITY_UPDATE_INTERVAL) {
+    if (entity_update_counter >= 10) {  // 每10帧更新一次，进一步减少闪烁
         entity_update_counter = 0;
         displayed_entities = count_active_entities();
-        if (displayed_entities > 999) displayed_entities = 999; // Cap at 999 for display
+        if (displayed_entities > 999) displayed_entities = 999;
     }
 }
 
-// Draw performance counters at the right edge, vertically arranged
+// 修改绘制函数 - 只在数值变化时重绘
 void draw_performance_counters(void) {
-    // Clear counter area (rightmost 40 pixels, full height)
-    for (int x = SCREEN_WIDTH - 40; x < SCREEN_WIDTH; x++) {
-        for (int y = 0; y < SCREEN_HEIGHT; y++) {
-            LCD_DrawPoint(x, y, BLACK);
+    // 只在FPS变化时重绘FPS区域
+    if (displayed_fps != last_displayed_fps) {
+        // 清除FPS区域
+        for (int x = SCREEN_WIDTH - 40; x < SCREEN_WIDTH; x++) {
+            for (int y = 0; y < 25; y++) {
+                LCD_DrawPoint(x, y, BLACK);
+            }
         }
+        
+        // 重绘FPS
+        LCD_ShowString(SCREEN_WIDTH + 5 , 5, (u8*)"FPS", WHITE);
+        LCD_ShowNum(SCREEN_WIDTH + 5, 20, displayed_fps, 2, WHITE);
+        
+        last_displayed_fps = displayed_fps;
     }
     
-    // Draw FPS counter (top right)
-    LCD_ShowString(SCREEN_WIDTH - 35, 5, (u8*)"F", WHITE);
-    LCD_ShowString(SCREEN_WIDTH - 28, 5, (u8*)"P", WHITE);
-    LCD_ShowString(SCREEN_WIDTH - 21, 5, (u8*)"S", WHITE);
-    LCD_ShowNum(SCREEN_WIDTH - 35, 15, displayed_fps, 2, WHITE);
-    
-    // Draw entity counter (middle right)
-    LCD_ShowString(SCREEN_WIDTH - 35, 30, (u8*)"E", WHITE);
-    LCD_ShowString(SCREEN_WIDTH - 28, 30, (u8*)"N", WHITE);
-    LCD_ShowString(SCREEN_WIDTH - 21, 30, (u8*)"T", WHITE);
-    LCD_ShowNum(SCREEN_WIDTH - 35, 40, displayed_entities, 3, WHITE);
+    // 只在实体数变化时重绘实体区域
+    if (displayed_entities != last_displayed_entities) {
+        // 清除实体区域
+        for (int x = SCREEN_WIDTH - 40; x < SCREEN_WIDTH; x++) {
+            for (int y = 25; y < 50; y++) {
+                LCD_DrawPoint(x, y, BLACK);
+            }
+        }
+        
+        // 重绘实体计数
+        LCD_ShowString(SCREEN_WIDTH + 5, 30, (u8*)"ENT", WHITE);
+        LCD_ShowNum(SCREEN_WIDTH +5 , 45, displayed_entities, 3, WHITE);
+        
+        last_displayed_entities = displayed_entities;
+    }
 }
 
 // Safe LCD drawing function with bounds checking
