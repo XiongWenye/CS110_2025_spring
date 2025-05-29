@@ -71,10 +71,6 @@ int simple_rand(void) {
     return (rand_seed / 65536) % 32768;
 }
 
-// Get current time in milliseconds (approximation based on frame counter)
-unsigned long get_time_ms(void) {
-    return frame_counter * 16; // Assume 16ms per frame
-}
 
 
 
@@ -100,7 +96,6 @@ static uint32_t fps_frame_count = 0;
 
 // 真实FPS计数器 - 使用get_timer_value()测量
 void update_fps_counter(void) {
-    static uint64_t last_fps_update_time = 0;
     
     // 获取当前真实时间
     uint64_t current_time = get_timer_value();
