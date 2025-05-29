@@ -3,15 +3,15 @@
 #include "assembly/example.h"
 #include "assembly/select.h"
 
-// Game constants
+// Game constants - 大幅增加数量
 #define SCREEN_WIDTH 160
 #define SCREEN_HEIGHT 80
 #define PLAYER_SIZE 4
 #define ENEMY_SIZE 3
 #define BULLET_SIZE 2
-#define MAX_BULLETS 10
-#define MAX_ENEMY_BULLETS 15
-#define MAX_ENEMIES 5
+#define MAX_BULLETS 300         // 增加到300个玩家子弹
+#define MAX_ENEMY_BULLETS 300   // 增加到300个敌人子弹
+#define MAX_ENEMIES 20          // 增加到20个敌人
 
 // Player structure
 typedef struct {
@@ -33,6 +33,7 @@ typedef struct {
     int active;
     int speed;
     int shoot_timer;
+    int type;  // 新增：敌人类型
 } Enemy;
 
 // Game state
@@ -96,13 +97,18 @@ void init_game(void) {
         enemy_bullets[i].dy = 0;
     }
     
-    // Initialize enemies
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        enemies[i].x = 20 + i * 25;
-        enemies[i].y = 20;
-        enemies[i].active = 1;
-        enemies[i].speed = 1;
-        enemies[i].shoot_timer = 0;
+    // Initialize enemies - 多行多列布局
+    int enemy_count = 0;
+    for (int row = 0; row < 4 && enemy_count < MAX_ENEMIES; row++) {
+        for (int col = 0; col < 5 && enemy_count < MAX_ENEMIES; col++) {
+            enemies[enemy_count].x = 20 + col * 28;
+            enemies[enemy_count].y = 10 + row * 15;
+            enemies[enemy_count].active = 1;
+            enemies[enemy_count].speed = 1;
+            enemies[enemy_count].shoot_timer = enemy_count * 10; // 错开射击时间
+            enemies[enemy_count].type = enemy_count % 3; // 三种类型的敌人
+            enemy_count++;
+        }
     }
 }
 
@@ -141,22 +147,24 @@ void update_player(void) {
         }
     }
 
-    // Handle BUTTON_1 with proper debouncing
+    // Handle BUTTON_1 - 高频射击
     if (Get_Button(BUTTON_1)) {
         if (button1_debounce == 0) {
-            button1_debounce = 10;  // 10 frame debounce
-            debounce_counter = 5;   // 5 frame delay for all inputs
+            button1_debounce = 3;  // 减少防抖动时间，增加射击频率
+            debounce_counter = 1;   // 减少全局延迟
             
-            // Find available bullet slot
-            for (int i = 0; i < MAX_BULLETS; i++) {
-                if (!player_bullets[i].active) {
-                    player_bullets[i].x = player.x + PLAYER_SIZE / 2;
-                    player_bullets[i].y = player.y;
-                    player_bullets[i].active = 1;
-                    player_bullets[i].speed = 3;
-                    player_bullets[i].dx = 0;
-                    player_bullets[i].dy = -1;  // Move up
-                    break;
+            // 发射三连发子弹
+            for (int burst = 0; burst < 3; burst++) {
+                for (int i = 0; i < MAX_BULLETS; i++) {
+                    if (!player_bullets[i].active) {
+                        player_bullets[i].x = player.x + PLAYER_SIZE / 2 + burst - 1;
+                        player_bullets[i].y = player.y - burst * 2;
+                        player_bullets[i].active = 1;
+                        player_bullets[i].speed = 4;
+                        player_bullets[i].dx = 0;
+                        player_bullets[i].dy = -1;  // Move up
+                        break;
+                    }
                 }
             }
         }
@@ -164,32 +172,40 @@ void update_player(void) {
         button1_debounce = 0;  // Reset when button is released
     }
 
-    // Handle BUTTON_2 with proper debouncing
+    // Handle BUTTON_2 - 超级扩散射击
     if (Get_Button(BUTTON_2)) {
         if (button2_debounce == 0) {
-            button2_debounce = 20;  // 20 frame debounce for spread shot
-            debounce_counter = 10;  // 10 frame delay for all inputs
+            button2_debounce = 15;  // 15 frame debounce for spread shot
+            debounce_counter = 5;   // 5 frame delay for all inputs
             
-            // Shoot 8 bullets in different directions
-            int directions[8][2] = {
+            // 发射16方向的子弹（更密集）
+            int directions[16][2] = {
                 {0, -1},   // Up
+                {1, -2},   // Up-Right steep
                 {1, -1},   // Up-Right
+                {2, -1},   // Up-Right shallow
                 {1, 0},    // Right
+                {2, 1},    // Down-Right shallow
                 {1, 1},    // Down-Right
+                {1, 2},    // Down-Right steep
                 {0, 1},    // Down
+                {-1, 2},   // Down-Left steep
                 {-1, 1},   // Down-Left
+                {-2, 1},   // Down-Left shallow
                 {-1, 0},   // Left
-                {-1, -1}   // Up-Left
+                {-2, -1},  // Up-Left shallow
+                {-1, -1},  // Up-Left
+                {-1, -2}   // Up-Left steep
             };
             
             int bullets_fired = 0;
-            for (int dir = 0; dir < 8 && bullets_fired < 8; dir++) {
-                for (int i = 0; i < MAX_BULLETS && bullets_fired < 8; i++) {
+            for (int dir = 0; dir < 16 && bullets_fired < 16; dir++) {
+                for (int i = 0; i < MAX_BULLETS && bullets_fired < 16; i++) {
                     if (!player_bullets[i].active) {
                         player_bullets[i].x = player.x + PLAYER_SIZE / 2;
                         player_bullets[i].y = player.y;
                         player_bullets[i].active = 1;
-                        player_bullets[i].speed = 2;
+                        player_bullets[i].speed = 3;
                         player_bullets[i].dx = directions[dir][0];
                         player_bullets[i].dy = directions[dir][1];
                         bullets_fired++;
@@ -199,7 +215,7 @@ void update_player(void) {
             }
         }
     } else {
-        button2_debounce = 0;  // Reset when button is released
+        button2_debounce = 0;
     }
     
     // Decrease debounce counters
@@ -244,8 +260,8 @@ void update_enemies(void) {
     
     move_timer++;
     
-    // Move enemies every 30 frames
-    if (move_timer >= 30) {
+    // Move enemies every 25 frames (faster movement)
+    if (move_timer >= 25) {
         move_timer = 0;
         
         int should_move_down = 0;
@@ -268,9 +284,9 @@ void update_enemies(void) {
                 clear_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE);
                 
                 if (should_move_down) {
-                    enemies[i].y += 10;  // Move down
+                    enemies[i].y += 8;  // Move down faster
                 } else {
-                    enemies[i].x += enemy_direction * 5;  // Move horizontally
+                    enemies[i].x += enemy_direction * 4;  // Move horizontally faster
                 }
             }
         }
@@ -280,34 +296,68 @@ void update_enemies(void) {
         }
     }
     
-    // Draw enemies
+    // Draw enemies with different colors based on type
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (enemies[i].active) {
-            draw_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE, RED);
+            u16 enemy_color;
+            switch (enemies[i].type) {
+                case 0: enemy_color = RED; break;
+                case 1: enemy_color = MAGENTA; break;
+                case 2: enemy_color = YELLOW; break;
+                default: enemy_color = RED; break;
+            }
+            draw_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE, enemy_color);
         }
     }
 }
 
-// Update enemy bullets system
+// Update enemy bullets system - 大幅增加射击频率
 void update_enemy_bullets(void) {
-    // Enemy shooting logic
+    // Enemy shooting logic - 更频繁的射击
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (enemies[i].active) {
             enemies[i].shoot_timer++;
-            // Shoot every 180 frames (about 3 seconds at 60 FPS)
-            if (enemies[i].shoot_timer >= 180) {
+            
+            // 不同类型的敌人有不同的射击模式
+            int shoot_interval;
+            switch (enemies[i].type) {
+                case 0: shoot_interval = 60; break;  // 1秒一发
+                case 1: shoot_interval = 40; break;  // 0.67秒一发
+                case 2: shoot_interval = 80; break;  // 1.33秒一发，但发射扩散弹
+                default: shoot_interval = 60; break;
+            }
+            
+            if (enemies[i].shoot_timer >= shoot_interval) {
                 enemies[i].shoot_timer = 0;
                 
-                // Find available bullet slot
-                for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
-                    if (!enemy_bullets[j].active) {
-                        enemy_bullets[j].x = enemies[i].x + ENEMY_SIZE / 2;
-                        enemy_bullets[j].y = enemies[i].y + ENEMY_SIZE;
-                        enemy_bullets[j].active = 1;
-                        enemy_bullets[j].speed = 1;
-                        enemy_bullets[j].dx = 0;
-                        enemy_bullets[j].dy = 1;  // Move down
-                        break;
+                if (enemies[i].type == 2) {
+                    // 类型2敌人发射三发扩散弹
+                    int spread_dirs[3][2] = {{-1, 1}, {0, 1}, {1, 1}};
+                    for (int spread = 0; spread < 3; spread++) {
+                        for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
+                            if (!enemy_bullets[j].active) {
+                                enemy_bullets[j].x = enemies[i].x + ENEMY_SIZE / 2;
+                                enemy_bullets[j].y = enemies[i].y + ENEMY_SIZE;
+                                enemy_bullets[j].active = 1;
+                                enemy_bullets[j].speed = 2;
+                                enemy_bullets[j].dx = spread_dirs[spread][0];
+                                enemy_bullets[j].dy = spread_dirs[spread][1];
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // 普通敌人发射单发子弹
+                    for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
+                        if (!enemy_bullets[j].active) {
+                            enemy_bullets[j].x = enemies[i].x + ENEMY_SIZE / 2;
+                            enemy_bullets[j].y = enemies[i].y + ENEMY_SIZE;
+                            enemy_bullets[j].active = 1;
+                            enemy_bullets[j].speed = 2;
+                            enemy_bullets[j].dx = 0;
+                            enemy_bullets[j].dy = 1;  // Move down
+                            break;
+                        }
                     }
                 }
             }
@@ -370,12 +420,24 @@ void check_collisions(void) {
                 enemy_bullets[i].y >= player.y && 
                 enemy_bullets[i].y < player.y + PLAYER_SIZE) {
                 
-                // Hit! Remove bullet (could add player damage system here)
+                // Hit! Remove bullet
                 enemy_bullets[i].active = 0;
-                // For now, just remove the bullet - you could add lives/health system
+                clear_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
             }
         }
     }
+}
+
+// Count active bullets (for debugging/optimization)
+int count_active_bullets(void) {
+    int count = 0;
+    for (int i = 0; i < MAX_BULLETS; i++) {
+        if (player_bullets[i].active) count++;
+    }
+    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
+        if (enemy_bullets[i].active) count++;
+    }
+    return count;
 }
 
 // Main game loop
@@ -393,7 +455,7 @@ void game_loop(int difficulty) {
         update_enemy_bullets();
         check_collisions();
         
-        // Frame rate control - restore normal frame rate
+        // Frame rate control - maintain 60 FPS
         delay_1ms(16); // Approximately 60 FPS
     }
 }
