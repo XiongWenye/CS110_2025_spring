@@ -42,6 +42,9 @@ Bullet player_bullets[MAX_BULLETS];
 Bullet enemy_bullets[MAX_ENEMY_BULLETS];
 Enemy enemies[MAX_ENEMIES];
 
+// Random number generator state
+static unsigned int rand_seed = 12345;
+
 void Inp_init(void) {
   rcu_periph_clock_enable(RCU_GPIOA);
   rcu_periph_clock_enable(RCU_GPIOC);
@@ -55,6 +58,12 @@ void Inp_init(void) {
 void IO_init(void) {
   Inp_init(); // inport init
   Lcd_Init(); // LCD init
+}
+
+// Simple random number generator
+int simple_rand(void) {
+    rand_seed = rand_seed * 1103515245 + 12345;
+    return (rand_seed / 65536) % 32768;
 }
 
 // Safe LCD drawing function with bounds checking
@@ -97,17 +106,51 @@ void init_game(void) {
         enemy_bullets[i].dy = 0;
     }
     
-    // Initialize enemies - 多行多列布局
-    int enemy_count = 0;
-    for (int row = 0; row < 4 && enemy_count < MAX_ENEMIES; row++) {
-        for (int col = 0; col < 5 && enemy_count < MAX_ENEMIES; col++) {
-            enemies[enemy_count].x = 20 + col * 28;
-            enemies[enemy_count].y = 10 + row * 15;
-            enemies[enemy_count].active = 1;
-            enemies[enemy_count].speed = 1;
-            enemies[enemy_count].shoot_timer = enemy_count * 10; // 错开射击时间
-            enemies[enemy_count].type = enemy_count % 3; // 三种类型的敌人
-            enemy_count++;
+    // Initialize enemies - 初始生成一些敌人
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        enemies[i].active = 0;  // 开始时都不活跃，随机生成
+    }
+    
+    // 生成初始敌人
+    for (int i = 0; i < 10; i++) {  // 初始生成10个敌人
+        spawn_random_enemy();
+    }
+}
+
+// Spawn a random enemy
+void spawn_random_enemy(void) {
+    // Find an inactive enemy slot
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        if (!enemies[i].active) {
+            // Random spawn position at top of screen
+            enemies[i].x = simple_rand() % (SCREEN_WIDTH - ENEMY_SIZE);
+            enemies[i].y = -(simple_rand() % 20 + 5);  // Spawn above screen
+            enemies[i].active = 1;
+            enemies[i].speed = 1 + simple_rand() % 3;  // Random speed 1-3
+            enemies[i].shoot_timer = simple_rand() % 60;  // Random initial timer
+            enemies[i].type = simple_rand() % 4;  // 四种类型的敌人 (0-3)
+            break;
+        }
+    }
+}
+
+// Spawn enemy formation
+void spawn_enemy_formation(void) {
+    // Spawn a formation of 3-5 enemies
+    int formation_size = 3 + simple_rand() % 3;  // 3-5 enemies
+    int start_x = simple_rand() % (SCREEN_WIDTH - formation_size * 25);
+    
+    for (int i = 0; i < formation_size; i++) {
+        for (int j = 0; j < MAX_ENEMIES; j++) {
+            if (!enemies[j].active) {
+                enemies[j].x = start_x + i * 25;
+                enemies[j].y = -(simple_rand() % 15 + 5);
+                enemies[j].active = 1;
+                enemies[j].speed = 1;
+                enemies[j].shoot_timer = simple_rand() % 40;
+                enemies[j].type = simple_rand() % 4;
+                break;
+            }
         }
     }
 }
@@ -253,46 +296,54 @@ void update_player_bullets(void) {
     }
 }
 
-// Update enemies with movement and shooting
+// Update enemies with movement and random spawning
 void update_enemies(void) {
-    static int enemy_direction = 1;
-    static int move_timer = 0;
+    static int spawn_timer = 0;
+    static int formation_timer = 0;
     
-    move_timer++;
+    spawn_timer++;
+    formation_timer++;
     
-    // Move enemies every 25 frames (faster movement)
-    if (move_timer >= 25) {
-        move_timer = 0;
-        
-        int should_move_down = 0;
-        
-        // Check if any enemy hits the edge
-        for (int i = 0; i < MAX_ENEMIES; i++) {
-            if (enemies[i].active) {
-                if ((enemies[i].x <= 0 && enemy_direction < 0) || 
-                    (enemies[i].x >= SCREEN_WIDTH - ENEMY_SIZE && enemy_direction > 0)) {
-                    should_move_down = 1;
-                    break;
-                }
-            }
+    // Spawn individual enemies randomly
+    if (spawn_timer >= 30) {  // Every 0.5 seconds at 60 FPS
+        spawn_timer = 0;
+        if (simple_rand() % 100 < 30) {  // 30% chance to spawn
+            spawn_random_enemy();
         }
-        
-        // Move enemies
-        for (int i = 0; i < MAX_ENEMIES; i++) {
-            if (enemies[i].active) {
-                // Clear old position
-                clear_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE);
+    }
+    
+    // Spawn enemy formations occasionally
+    if (formation_timer >= 300) {  // Every 5 seconds
+        formation_timer = 0;
+        if (simple_rand() % 100 < 20) {  // 20% chance to spawn formation
+            spawn_enemy_formation();
+        }
+    }
+    
+    // Update enemy positions
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        if (enemies[i].active) {
+            // Clear old position
+            clear_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE);
+            
+            // Move enemy down
+            enemies[i].y += enemies[i].speed;
+            
+            // Remove enemy if it goes off screen
+            if (enemies[i].y > SCREEN_HEIGHT) {
+                enemies[i].active = 0;
+                continue;
+            }
+            
+            // Add some horizontal movement for variety
+            if (simple_rand() % 100 < 5) {  // 5% chance to change direction
+                int direction = (simple_rand() % 3) - 1;  // -1, 0, or 1
+                enemies[i].x += direction * 2;
                 
-                if (should_move_down) {
-                    enemies[i].y += 8;  // Move down faster
-                } else {
-                    enemies[i].x += enemy_direction * 4;  // Move horizontally faster
-                }
+                // Keep enemies on screen
+                if (enemies[i].x < 0) enemies[i].x = 0;
+                if (enemies[i].x > SCREEN_WIDTH - ENEMY_SIZE) enemies[i].x = SCREEN_WIDTH - ENEMY_SIZE;
             }
-        }
-        
-        if (should_move_down) {
-            enemy_direction *= -1;  // Reverse direction
         }
     }
     
@@ -304,6 +355,7 @@ void update_enemies(void) {
                 case 0: enemy_color = RED; break;
                 case 1: enemy_color = MAGENTA; break;
                 case 2: enemy_color = YELLOW; break;
+                case 3: enemy_color = GREEN; break;  // 新增第四种类型
                 default: enemy_color = RED; break;
             }
             draw_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE, enemy_color);
@@ -324,6 +376,7 @@ void update_enemy_bullets(void) {
                 case 0: shoot_interval = 60; break;  // 1秒一发
                 case 1: shoot_interval = 40; break;  // 0.67秒一发
                 case 2: shoot_interval = 80; break;  // 1.33秒一发，但发射扩散弹
+                case 3: shoot_interval = 30; break;  // 0.5秒一发 - 新类型：快速射击
                 default: shoot_interval = 60; break;
             }
             
@@ -340,6 +393,22 @@ void update_enemy_bullets(void) {
                                 enemy_bullets[j].y = enemies[i].y + ENEMY_SIZE;
                                 enemy_bullets[j].active = 1;
                                 enemy_bullets[j].speed = 2;
+                                enemy_bullets[j].dx = spread_dirs[spread][0];
+                                enemy_bullets[j].dy = spread_dirs[spread][1];
+                                break;
+                            }
+                        }
+                    }
+                } else if (enemies[i].type == 3) {
+                    // 类型3敌人发射5方向扩散弹
+                    int spread_dirs[5][2] = {{-2, 1}, {-1, 1}, {0, 1}, {1, 1}, {2, 1}};
+                    for (int spread = 0; spread < 5; spread++) {
+                        for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
+                            if (!enemy_bullets[j].active) {
+                                enemy_bullets[j].x = enemies[i].x + ENEMY_SIZE / 2;
+                                enemy_bullets[j].y = enemies[i].y + ENEMY_SIZE;
+                                enemy_bullets[j].active = 1;
+                                enemy_bullets[j].speed = 1;
                                 enemy_bullets[j].dx = spread_dirs[spread][0];
                                 enemy_bullets[j].dy = spread_dirs[spread][1];
                                 break;
@@ -405,6 +474,11 @@ void check_collisions(void) {
                         
                         // Clear enemy from screen
                         clear_rect(enemies[j].x, enemies[j].y, ENEMY_SIZE, ENEMY_SIZE);
+                        
+                        // 有概率生成新敌人作为奖励机制
+                        if (simple_rand() % 100 < 10) {  // 10% chance
+                            spawn_random_enemy();
+                        }
                     }
                 }
             }
@@ -428,16 +502,22 @@ void check_collisions(void) {
     }
 }
 
-// Count active bullets (for debugging/optimization)
-int count_active_bullets(void) {
-    int count = 0;
+// Count active bullets and enemies
+int count_active_objects(void) {
+    int bullet_count = 0;
+    int enemy_count = 0;
+    
     for (int i = 0; i < MAX_BULLETS; i++) {
-        if (player_bullets[i].active) count++;
+        if (player_bullets[i].active) bullet_count++;
     }
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
-        if (enemy_bullets[i].active) count++;
+        if (enemy_bullets[i].active) bullet_count++;
     }
-    return count;
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        if (enemies[i].active) enemy_count++;
+    }
+    
+    return bullet_count + enemy_count;
 }
 
 // Main game loop
