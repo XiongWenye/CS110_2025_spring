@@ -46,16 +46,6 @@ Bullet player_bullets[MAX_BULLETS];
 Bullet enemy_bullets[MAX_ENEMY_BULLETS];
 Enemy enemies[MAX_ENEMIES];
 
-// Performance counters
-static unsigned long frame_times[FPS_SAMPLE_FRAMES];
-static int frame_index = 0;
-static int displayed_fps = 60;
-static int displayed_entities = 0;
-static int entity_update_counter = 0;
-static unsigned long frame_counter = 0;
-// 添加这些变量来避免频闪
-static int last_displayed_fps = -1;
-static int last_displayed_entities = -1;
 
 // Random number generator state
 static unsigned int rand_seed = 12345;
@@ -90,35 +80,62 @@ unsigned long get_time_ms(void) {
 
 
 
-// 基于真实时间的FPS测量
+// 添加这些变量到性能计数器部分
+// Performance counters
+static unsigned long frame_times[FPS_SAMPLE_FRAMES];
+static int frame_index = 0;
+static int displayed_fps = 60;
+static int displayed_entities = 0;
+static int entity_update_counter = 0;
+static unsigned long frame_counter = 0;
+// 添加这些变量来避免频闪
+static int last_displayed_fps = -1;
+static int last_displayed_entities = -1;
+
+// 添加真实时间测量变量
+static uint64_t fps_measurement_start_time = 0;
+static uint32_t fps_frame_count = 0;
+
+// ...existing code...
+
+// 真实FPS计数器 - 使用get_timer_value()测量
 void update_fps_counter(void) {
-    static unsigned long last_time = 0;
-    static unsigned long frame_count = 0;
-    static unsigned long time_accumulator = 0;
+    static uint64_t last_fps_update_time = 0;
     
-    frame_count++;
+    // 获取当前真实时间
+    uint64_t current_time = get_timer_value();
     
-    // 假设我们可以获取真实的毫秒时间
-    unsigned long current_time = frame_counter * 16; // 每帧约16ms
+    // 增加帧计数
+    fps_frame_count++;
     
-    if (frame_count >= 60) { // 每60帧计算一次
-        unsigned long elapsed = current_time - last_time;
+    // 如果这是第一次测量，记录开始时间
+    if (fps_measurement_start_time == 0) {
+        fps_measurement_start_time = current_time;
+        fps_frame_count = 0;
+        return;
+    }
+    
+    // 每30帧更新一次FPS显示（约0.5秒）
+    if (fps_frame_count >= 30) {
+        uint64_t elapsed_time = current_time - fps_measurement_start_time;
         
-        if (elapsed > 0) {
-            // FPS = (帧数 * 1000) / 毫秒数
-            unsigned long calculated_fps = (frame_count * 1000) / elapsed;
-            displayed_fps = (int)calculated_fps;
+        if (elapsed_time > 0) {
+            // 计算真实FPS
+            // elapsed_time 的单位是定时器滴答
+            // SystemCoreClock/4 是每秒的滴答数（根据你的delay_1ms实现）
+            uint64_t ticks_per_second = SystemCoreClock / 4;
             
-            // 考虑游戏逻辑的额外开销
-            int overhead = displayed_entities / 20; // 每20个实体减少1fps
-            displayed_fps -= overhead;
+            // FPS = 帧数 / 秒数 = 帧数 / (elapsed_ticks / ticks_per_second)
+            displayed_fps = (fps_frame_count * ticks_per_second) / elapsed_time;
             
+            // 限制显示范围
             if (displayed_fps > 99) displayed_fps = 99;
-            if (displayed_fps < 20) displayed_fps = 20;
+            if (displayed_fps < 1) displayed_fps = 1;
         }
         
-        last_time = current_time;
-        frame_count = 0;
+        // 重置测量
+        fps_measurement_start_time = current_time;
+        fps_frame_count = 0;
     }
 }
 
