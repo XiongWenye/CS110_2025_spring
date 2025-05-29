@@ -33,22 +33,43 @@ select:
     jal LCD_ShowString
     
     li a0, 100        // x
-    li a1, 40         // y
+    li a1, 35         // y
     la a2, title_char2  // 
     li a3, 65535     // WHITE
     jal LCD_ShowString
     
     li a0, 100        // x
-    li a1, 60         // y
+    li a1, 50         // y
     la a2, title_char3  // 
     li a3, 65535     // WHITE
     jal LCD_ShowString
 
-    // Draw initial options - all white first
-    jal draw_all_options_white
+    // Draw horizontal line
+    // Draw all options
+    li a0, 20        // x
+    li a1, 25        // y
+    la a2, easy_str  // "EASY"
+    li a3, 65535     // WHITE
+    jal LCD_ShowString
     
-    // Draw initial cursor and highlight first option
-    jal draw_cursor_and_highlight
+    li a0, 20        // x
+    li a1, 40        // y
+    la a2, normal_str // "NORMAL"
+    li a3, 65535     // WHITE
+    jal LCD_ShowString
+    
+    li a0, 20        // x
+    li a1, 55        // y
+    la a2, hard_str  // "HARD"
+    li a3, 65535     // WHITE
+    jal LCD_ShowString
+    
+    // Draw initial cursor
+    li a0, 10        // x position for cursor
+    li a1, 25        // y position for EASY (initial selection)
+    la a2, cursor_str // ">"
+    li a3, 65535     // WHITE color
+    jal LCD_ShowString
     
     mv s2, s0        // Update previous cursor position to current
     
@@ -92,11 +113,49 @@ wrap_to_top:
     j redraw_cursor
     
 redraw_cursor:
-    // Restore old option to white color
-    jal restore_old_option_white
+    // Erase old cursor position
+    li a0, 10        // x position for cursor
     
-    // Draw cursor and highlight new option
-    jal draw_cursor_and_highlight
+    // Calculate old cursor Y position
+    beqz s2, erase_easy     // if s2 == 0 (EASY)
+    li t0, 1
+    beq s2, t0, erase_normal // if s2 == 1 (NORMAL)
+    li a1, 55        // s2 == 2 (HARD)
+    j erase_cursor
+    
+erase_easy:
+    li a1, 25        // EASY Y position
+    j erase_cursor
+    
+erase_normal:
+    li a1, 40        // NORMAL Y position
+    
+erase_cursor:
+    la a2, space_str // " " to erase
+    li a3, 0         // BLACK color to erase
+    jal LCD_ShowString
+    
+    // Draw new cursor
+    li a0, 10        // x position for cursor
+    
+    // Calculate new cursor Y position
+    beqz s0, draw_easy     // if s0 == 0 (EASY)
+    li t0, 1
+    beq s0, t0, draw_normal // if s0 == 1 (NORMAL)
+    li a1, 55        // s0 == 2 (HARD)
+    j draw_cursor
+    
+draw_easy:
+    li a1, 25        // EASY Y position
+    j draw_cursor
+    
+draw_normal:
+    li a1, 40        // NORMAL Y position
+    
+draw_cursor:
+    la a2, cursor_str // ">"
+    li a3, 65535     // WHITE color
+    jal LCD_ShowString
     
     mv s2, s0        // Update previous cursor position
     
@@ -124,133 +183,6 @@ reset_button_state:
     
 keep_button_state:
     j selection_loop
-
-draw_all_options_white:
-    // Draw EASY in white
-    li a0, 20        // x
-    li a1, 25        // y
-    la a2, easy_str  // "EASY"
-    li a3, 65535     // WHITE
-    jal LCD_ShowString
-    
-    // Draw NORMAL in white
-    li a0, 20        // x
-    li a1, 40        // y
-    la a2, normal_str // "NORMAL"
-    li a3, 65535     // WHITE
-    jal LCD_ShowString
-    
-    // Draw HARD in white
-    li a0, 20        // x
-    li a1, 55        // y
-    la a2, hard_str  // "HARD"
-    li a3, 65535     // WHITE
-    jal LCD_ShowString
-    
-    ret
-
-restore_old_option_white:
-    // Only restore if s2 is valid (not -1)
-    li t0, -1
-    beq s2, t0, skip_restore
-    
-    li a0, 20        // x position for options
-    
-    // Calculate old option Y position and string
-    beqz s2, restore_easy     // if s2 == 0 (EASY)
-    li t0, 1
-    beq s2, t0, restore_normal // if s2 == 1 (NORMAL)
-    // s2 == 2 (HARD)
-    li a1, 55        // HARD Y position
-    la a2, hard_str  // "HARD"
-    j restore_option
-    
-restore_easy:
-    li a1, 25        // EASY Y position
-    la a2, easy_str  // "EASY"
-    j restore_option
-    
-restore_normal:
-    li a1, 40        // NORMAL Y position
-    la a2, normal_str // "NORMAL"
-    
-restore_option:
-    li a3, 65535     // WHITE color
-    jal LCD_ShowString
-    
-skip_restore:
-    ret
-
-draw_cursor_and_highlight:
-    // Erase old cursor position first
-    li a0, 10        // x position for cursor
-    li a1, 25        // EASY Y position
-    la a2, space_str // " " to erase
-    li a3, 0         // BLACK color
-    jal LCD_ShowString
-    
-    li a0, 10        // x position for cursor
-    li a1, 40        // NORMAL Y position
-    la a2, space_str // " " to erase
-    li a3, 0         // BLACK color
-    jal LCD_ShowString
-    
-    li a0, 10        // x position for cursor
-    li a1, 55        // HARD Y position
-    la a2, space_str // " " to erase
-    li a3, 0         // BLACK color
-    jal LCD_ShowString
-    
-    // Draw cursor at new position
-    li a0, 10        // x position for cursor
-    
-    // Calculate new cursor Y position and highlight option
-    beqz s0, highlight_easy     // if s0 == 0 (EASY)
-    li t0, 1
-    beq s0, t0, highlight_normal // if s0 == 1 (NORMAL)
-    // s0 == 2 (HARD)
-    li a1, 55        // HARD Y position
-    la a2, cursor_str // ">"
-    li a3, 65535     // WHITE color
-    jal LCD_ShowString
-    
-    // Highlight HARD option in blue
-    li a0, 20        // x position for options
-    li a1, 55        // HARD Y position
-    la a2, hard_str  // "HARD"
-    li a3, 31        // BLUE color
-    jal LCD_ShowString
-    j done_highlight
-    
-highlight_easy:
-    li a1, 25        // EASY Y position
-    la a2, cursor_str // ">"
-    li a3, 65535     // WHITE color
-    jal LCD_ShowString
-    
-    // Highlight EASY option in blue
-    li a0, 20        // x position for options
-    li a1, 25        // EASY Y position
-    la a2, easy_str  // "EASY"
-    li a3, 31        // BLUE color
-    jal LCD_ShowString
-    j done_highlight
-    
-highlight_normal:
-    li a1, 40        // NORMAL Y position
-    la a2, cursor_str // ">"
-    li a3, 65535     // WHITE color
-    jal LCD_ShowString
-    
-    // Highlight NORMAL option in blue
-    li a0, 20        // x position for options
-    li a1, 40        // NORMAL Y position
-    la a2, normal_str // "NORMAL"
-    li a3, 31        // BLUE color
-    jal LCD_ShowString
-    
-done_highlight:
-    ret
     
 cleanup_and_return:
     // Restore registers and return
