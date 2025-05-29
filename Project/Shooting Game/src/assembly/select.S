@@ -65,14 +65,14 @@ selection_loop:
     
     // Clear old FPS display
     li a0, 42        // x (after "FPS:")
-    li a1, 100       // y
+    li a1, 70       // y
     la a2, space_str // "   " to clear old numbers
     li a3, 0         // BLACK color
     jal LCD_ShowString
     
     // Display new FPS
     li a0, 42        // x (after "FPS:")
-    li a1, 100       // y
+    li a1, 70       // y
     mv a2, s5        // FPS value
     li a3, 3         // 3 digits
     li a4, 65535     // WHITE
@@ -85,9 +85,10 @@ skip_fps_calculation:
     
 redraw_cursor:
     // Erase old cursor position
-    beq s2, -1, skip_erase  // Skip if first draw
+    li t2, -1       // Load -1 into a temporary register
+    beq s2, t2, skip_erase  // Skip if first draw
     li a0, 25        // x position for cursor
-    li a1, 40        // base y position
+    li a1, 15        // base y position
     li t0, 20        // offset per option
     mul t1, s2, t0   // calculate old offset
     add a1, a1, t1   // old y position
@@ -98,7 +99,7 @@ redraw_cursor:
 skip_erase:
     // Draw new cursor
     li a0, 25        // x position for cursor
-    li a1, 40        // base y position
+    li a1, 15        // base y position
     li t0, 20        // offset per option
     mul t1, s0, t0   // calculate new offset
     add a1, a1, t1   // new y position
@@ -172,24 +173,6 @@ keep_button_state:
     j selection_loop
     
 draw_static_elements:
-    // Draw title
-    li a0, 60        // x position (centered)
-    li a1, 10        // y position
-    la a2, title_char1 // "席"
-    li a3, 0xF800     // RED color
-    jal LCD_ShowChinese
-    
-    li a0, 80        // x position
-    li a1, 10        // y position
-    la a2, title_char2 // "文"
-    li a3, 0xF800
-    jal LCD_ShowChinese
-    
-    li a0, 100       // x position
-    li a1, 10        // y position
-    la a2, title_char3 // "义"
-    li a3, 0xF800
-    jal LCD_ShowChinese
 
     // Draw options
     li a0, 40        // x
@@ -212,7 +195,7 @@ draw_static_elements:
     
     // Draw static FPS label
     li a0, 10        // x
-    li a1, 75      // y
+    li a1, 70      // y
     la a2, fps_str   // "FPS:"
     li a3, 65535     // WHITE
     jal LCD_ShowString

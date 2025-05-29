@@ -300,7 +300,8 @@ void Board_self_test(void) {
 
 int main(void) {
   IO_init();
-  timer_init();  // Initialize the timer for FPS calculation
+  timer_parameter_struct timer_initpara;
+  timer_init(TIMER1, &timer_initpara);  // Initialize the timer for FPS calculation
   
   int difficulty = select();  // Call assembly function
   

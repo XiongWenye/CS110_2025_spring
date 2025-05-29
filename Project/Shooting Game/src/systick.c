@@ -60,7 +60,7 @@ void delay_1ms(uint32_t count)
 static volatile uint32_t system_ticks = 0;
 
 // Initialize a timer for timing
-void timer_init(void) {
+void systick_timer_init(void) {
     rcu_periph_clock_enable(RCU_TIMER1);
     
     timer_parameter_struct timer_initpara;
@@ -72,10 +72,16 @@ void timer_init(void) {
     timer_initpara.counterdirection = TIMER_COUNTER_UP;
     timer_initpara.period = 999;  // 1MHz / 1000 = 1ms
     timer_initpara.clockdivision = TIMER_CKDIV_DIV1;
+    timer_initpara.prescaler = 107;  // 108MHz / 108 = 1MHz
+    timer_initpara.alignedmode = TIMER_COUNTER_EDGE;
+    timer_initpara.counterdirection = TIMER_COUNTER_UP;
+    eclic_irq_enable(TIMER1_IRQn, 1, 1); // Added priority argument
+    timer_initpara.clockdivision = TIMER_CKDIV_DIV1;
+    timer_initpara.repetitioncounter = 0;  // Add repetition counter field
     timer_init(TIMER1, &timer_initpara);
     
     timer_interrupt_enable(TIMER1, TIMER_INT_UP);
-    nvic_irq_enable(TIMER1_IRQn, 1);
+    eclic_irq_enable(TIMER1_IRQn, 1, 1); // Replaced with correct function and added priority argument
     timer_enable(TIMER1);
 }
 
