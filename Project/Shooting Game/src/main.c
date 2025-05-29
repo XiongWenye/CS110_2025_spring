@@ -4,7 +4,7 @@
 #include "assembly/select.h"
 
 // Game constants - 大幅增加数量
-#define SCREEN_WIDTH 140
+#define SCREEN_WIDTH 100
 #define SCREEN_HEIGHT 80
 #define PLAYER_SIZE 4
 #define ENEMY_SIZE 3
