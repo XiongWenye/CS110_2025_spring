@@ -475,12 +475,13 @@ void check_collisions(void) {
                         player_bullets[i].y >= enemies[j].y && 
                         player_bullets[i].y < enemies[j].y + ENEMY_SIZE) {
                         
-                        // Hit! Remove bullet and enemy
+                        // Hit! Clear both bullet and enemy positions first
+                        clear_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
+                        clear_rect(enemies[j].x, enemies[j].y, ENEMY_SIZE, ENEMY_SIZE);
+                        
+                        // Then deactivate them
                         player_bullets[i].active = 0;
                         enemies[j].active = 0;
-                        
-                        // Clear enemy from screen
-                        clear_rect(enemies[j].x, enemies[j].y, ENEMY_SIZE, ENEMY_SIZE);
                         
                         // 有概率生成新敌人作为奖励机制
                         if (simple_rand() % 100 < 10) {  // 10% chance
@@ -501,9 +502,9 @@ void check_collisions(void) {
                 enemy_bullets[i].y >= player.y && 
                 enemy_bullets[i].y < player.y + PLAYER_SIZE) {
                 
-                // Hit! Remove bullet
-                enemy_bullets[i].active = 0;
+                // Hit! Clear bullet position first, then deactivate
                 clear_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
+                enemy_bullets[i].active = 0;
             }
         }
     }
@@ -537,10 +538,14 @@ void game_loop(int difficulty) {
     while (1) {  // Infinite loop - no exit mechanism
         // Update game objects
         update_player();
+        
+        // Check collisions BEFORE updating bullets
+        check_collisions();
+        
+        // Then update bullets (this will clear inactive bullets properly)
         update_player_bullets();
         update_enemies();
         update_enemy_bullets();
-        check_collisions();
         
         // Frame rate control - maintain 60 FPS
         delay_1ms(16); // Approximately 60 FPS
