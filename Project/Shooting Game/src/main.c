@@ -226,14 +226,6 @@ void safe_draw_pixel(int x, int y, u16 color) {
     }
 }
 
-// Draw a filled rectangle with bounds checking
-void draw_rect(int x, int y, int width, int height, u16 color) {
-    for (int i = 0; i < width; i++) {
-        for (int j = 0; j < height; j++) {
-            safe_draw_pixel(x + i, y + j, color);
-        }
-    }
-}
 
 // Clear a rectangle (erase)
 void clear_rect(int x, int y, int width, int height) {
