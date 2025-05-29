@@ -10,12 +10,12 @@
 #define ENEMY_SIZE 3
 #define BULLET_SIZE 2
 #define MAX_BULLETS 300         // 增加到300个玩家子弹
-#define MAX_ENEMY_BULLETS 300   // 增加到300个敌人子弹
+#define MAX_ENEMY_BULLETS 500   // 增加到300个敌人子弹
 #define MAX_ENEMIES 200         
 
 // FPS and entity counting constants
 #define FPS_SAMPLE_FRAMES 8     // Sample over 8 frames (0.133s at 60fps)
-#define ENTITY_UPDATE_INTERVAL 4  // Update entity counter every 4 frames
+#define ENTITY_UPDATE_INTERVAL 3  // Update entity counter every 4 frames
 
 // Player structure
 typedef struct {
@@ -114,6 +114,22 @@ void update_fps_counter(void) {
         }
         last_frame_time = current_time;
     }
+}
+
+int count_active_entities(void) {
+    int count = 1; // Player counts as 1
+    
+    for (int i = 0; i < MAX_BULLETS; i++) {
+        if (player_bullets[i].active) count++;
+    }
+    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
+        if (enemy_bullets[i].active) count++;
+    }
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        if (enemies[i].active) count++;
+    }
+    
+    return count;
 }
 
 // 修改实体计数器函数 - 减少更新频率
