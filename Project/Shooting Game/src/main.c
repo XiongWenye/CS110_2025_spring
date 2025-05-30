@@ -318,7 +318,7 @@ void init_game(void) {
     
     // Initialize performance counters
     for (int i = 0; i < FPS_SAMPLE_FRAMES; i++) {
-        frame_times[i] = 5; // Assume 16ms initially
+        frame_times[i] = 1; // Assume 16ms initially
     }
     frame_counter = 0;
 }
@@ -891,7 +891,7 @@ void game_loop(int difficulty) {
         draw_performance_counters();
         
         // Frame rate control - maintain 60 FPS
-        delay_1ms(5); // Approximately 60 FPS
+        delay_1ms(1); // Approximately 60 FPS
     }
 }
 
