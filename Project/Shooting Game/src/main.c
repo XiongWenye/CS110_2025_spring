@@ -117,7 +117,7 @@ void update_fps_counter(void) {
     }
     
     // 每30帧更新一次FPS显示（约0.5秒）
-    if (fps_frame_count >= 6) {
+    if (fps_frame_count >= 1) {
         uint64_t elapsed_time = current_time - fps_measurement_start_time;
         
         if (elapsed_time > 0) {
@@ -184,7 +184,7 @@ int count_active_entities(void) {
 // 减少计数器更新频率
 void update_entity_counter_optimized(void) {
     entity_update_counter++;
-    if (entity_update_counter >= 6) {  // 每20帧更新一次
+    if (entity_update_counter >= 1) {  // 每20帧更新一次
         entity_update_counter = 0;
         displayed_entities = count_active_entities();
         if (displayed_entities > 999) displayed_entities = 999;
