@@ -18,6 +18,11 @@
 #define TRACKING_BULLET_SIZE 4     // 追踪子弹尺寸（正方形）
 #define TRACKING_BULLET_SPEED 2    // 追踪子弹速度
 
+// 敌人和子弹形态常量
+#define SHAPE_HOLLOW_CIRCLE 0     // 空心圆
+#define SHAPE_HOLLOW_SQUARE 1     // 空心正方形
+#define SHAPE_SOLID_SQUARE 2      // 实心小方块
+
 // FPS and entity counting constants
 #define FPS_SAMPLE_FRAMES 8     // Sample over 8 frames (0.133s at 60fps)
 #define ENTITY_UPDATE_INTERVAL 3  // Update entity counter every 4 frames
@@ -34,6 +39,7 @@ typedef struct {
     int active;
     int speed;
     int dx, dy;  // Direction vectors
+    int shape;   // 新增：子弹形态
 } Bullet;
 
 // Enemy structure
@@ -42,7 +48,8 @@ typedef struct {
     int active;
     int speed;
     int shoot_timer;
-    int type;  // 新增：敌人类型
+    int type;   // 敌人类型
+    int shape;  // 新增：敌人形态
 } Enemy;
 
 // 追踪子弹结构体
@@ -82,6 +89,36 @@ void IO_init(void) {
 int simple_rand(void) {
     rand_seed = rand_seed * 1103515245 + 12345;
     return (rand_seed / 65536) % 32768;
+}
+
+// 清除敌人/子弹的函数
+void clear_shape(int x, int y, int size, int shape) {
+    switch(shape) {
+        case SHAPE_HOLLOW_CIRCLE:
+            LCD_DrawCircle(x + size/2, y + size/2, size/2, BLACK);
+            break;
+        case SHAPE_HOLLOW_SQUARE:
+            LCD_DrawRectangle(x, y, x + size - 1, y + size - 1, BLACK);
+            break;
+        case SHAPE_SOLID_SQUARE:
+            draw_rect(x, y, size, size, BLACK);
+            break;
+    }
+}
+
+// 绘制敌人/子弹的函数
+void draw_shape(int x, int y, int size, int shape, u16 color) {
+    switch(shape) {
+        case SHAPE_HOLLOW_CIRCLE:
+            LCD_DrawCircle(x + size/2, y + size/2, size/2, color);
+            break;
+        case SHAPE_HOLLOW_SQUARE:
+            LCD_DrawRectangle(x, y, x + size - 1, y + size - 1, color);
+            break;
+        case SHAPE_SOLID_SQUARE:
+            draw_rect(x, y, size, size, color);
+            break;
+    }
 }
 
 // 添加这些变量到性能计数器部分
@@ -292,11 +329,13 @@ void init_game(void) {
         player_bullets[i].active = 0;
         player_bullets[i].dx = 0;
         player_bullets[i].dy = 0;
+        player_bullets[i].shape = SHAPE_SOLID_SQUARE; // 玩家子弹默认实心方块
     }
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
         enemy_bullets[i].active = 0;
         enemy_bullets[i].dx = 0;
         enemy_bullets[i].dy = 0;
+        enemy_bullets[i].shape = SHAPE_SOLID_SQUARE; // 默认形态
     }
     
     // Initialize tracking bullets
@@ -309,6 +348,7 @@ void init_game(void) {
     // Initialize enemies - 初始生成一些敌人
     for (int i = 0; i < MAX_ENEMIES; i++) {
         enemies[i].active = 0;  // 开始时都不活跃，随机生成
+        enemies[i].shape = SHAPE_SOLID_SQUARE; // 默认形态
     }
     
     // 生成初始敌人
@@ -318,7 +358,7 @@ void init_game(void) {
     
     // Initialize performance counters
     for (int i = 0; i < FPS_SAMPLE_FRAMES; i++) {
-        frame_times[i] = 1; // Assume 16ms initially
+        frame_times[i] = 6; // Assume 16ms initially
     }
     frame_counter = 0;
 }
@@ -334,7 +374,8 @@ void spawn_random_enemy(void) {
             enemies[i].active = 1;
             enemies[i].speed = -1 + simple_rand() % 3;  // Random speed 1-3
             enemies[i].shoot_timer = simple_rand() % 60 + 20;  // Random initial timer
-            enemies[i].type = simple_rand() % 4;  // 四种类型的敌人 (0-3)
+            enemies[i].type = simple_rand() % 3;  // 三种类型的敌人 (0-2)
+            enemies[i].shape = simple_rand() % 3; // 随机形态：0=空心圆，1=空心正方形，2=实心方块
             break;
         }
     }
@@ -354,7 +395,8 @@ void spawn_enemy_formation(void) {
                 enemies[j].active = 1;
                 enemies[j].speed = 1;
                 enemies[j].shoot_timer = simple_rand() % 40;
-                enemies[j].type = simple_rand() % 4;
+                enemies[j].type = simple_rand() % 3;
+                enemies[j].shape = simple_rand() % 3; // 随机形态
                 break;
             }
         }
@@ -413,6 +455,7 @@ void update_player(void) {
                         player_bullets[i].speed = 4;
                         player_bullets[i].dx = 0;
                         player_bullets[i].dy = -1;  // Move up
+                        player_bullets[i].shape = SHAPE_SOLID_SQUARE; // 实心方块
                         break;
                     }
                 }
@@ -458,6 +501,7 @@ void update_player(void) {
                         player_bullets[i].speed = 3;
                         player_bullets[i].dx = directions[dir][0];
                         player_bullets[i].dy = directions[dir][1];
+                        player_bullets[i].shape = SHAPE_SOLID_SQUARE; // 实心方块
                         bullets_fired++;
                         break;
                     }
@@ -500,7 +544,7 @@ void update_player_bullets_optimized(void) {
         if (!player_bullets[i].active) continue;
         
         // 清除旧位置
-        clear_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
+        clear_shape(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, player_bullets[i].shape);
         
         // 更新位置
         player_bullets[i].x += player_bullets[i].dx * player_bullets[i].speed;
@@ -517,7 +561,7 @@ void update_player_bullets_optimized(void) {
     for (int i = 0; i < MAX_BULLETS; i++) {
         if (player_bullets[i].active) {
             u16 bullet_color = (player_bullets[i].dy == -1 && player_bullets[i].dx == 0) ? WHITE : CYAN;
-            draw_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE, bullet_color);
+            draw_shape(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, player_bullets[i].shape, bullet_color);
         }
     }
 }
@@ -621,8 +665,8 @@ void update_enemies(void) {
     // Update enemy positions
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (enemies[i].active) {
-            // Clear old position
-            clear_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE);
+            // Clear old position using the enemy's shape
+            clear_shape(enemies[i].x, enemies[i].y, ENEMY_SIZE, enemies[i].shape);
             
             // Move enemy down
             enemies[i].y += enemies[i].speed;
@@ -652,7 +696,7 @@ void update_enemies(void) {
         }
     }
     
-    // Draw enemies with different colors based on type
+    // Draw enemies with different colors and shapes based on type
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (enemies[i].active) {
             u16 enemy_color;
@@ -660,10 +704,9 @@ void update_enemies(void) {
                 case 0: enemy_color = RED; break;
                 case 1: enemy_color = MAGENTA; break;
                 case 2: enemy_color = YELLOW; break;
-                case 3: enemy_color = GREEN; break;  // 新增第四种类型
                 default: enemy_color = RED; break;
             }
-            draw_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE, enemy_color);
+            draw_shape(enemies[i].x, enemies[i].y, ENEMY_SIZE, enemies[i].shape, enemy_color);
         }
     }
 }
@@ -687,14 +730,13 @@ void update_enemy_bullets_optimized(void) {
                 case 0: shoot_interval = 120; break; // 降低射击频率
                 case 1: shoot_interval = 80; break;
                 case 2: shoot_interval = 160; break;
-                case 3: shoot_interval = 60; break;
                 default: shoot_interval = 120; break;
             }
             
             if (enemies[i].shoot_timer >= shoot_interval) {
                 enemies[i].shoot_timer = 0;
                 
-                // 简化射击模式，减少计算
+                // 发射子弹，形态与敌人相同
                 for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
                     if (!enemy_bullets[j].active) {
                         enemy_bullets[j].x = enemies[i].x + ENEMY_SIZE / 2;
@@ -703,18 +745,20 @@ void update_enemy_bullets_optimized(void) {
                         enemy_bullets[j].speed = 2;
                         enemy_bullets[j].dx = 0;
                         enemy_bullets[j].dy = 1;
-                        break; // 只发射一发，简化
+                        enemy_bullets[j].shape = enemies[i].shape; // 子弹形态与敌人相同
+                        break; // 只发射一发
                     }
                 }
             }
         }
     }
     
-    // 批量更新敌人子弹（与玩家子弹类似的优化）
+    // 批量更新敌人子弹
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
         if (!enemy_bullets[i].active) continue;
         
-        clear_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
+        // 清除旧位置
+        clear_shape(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, enemy_bullets[i].shape);
         
         enemy_bullets[i].x += enemy_bullets[i].dx * enemy_bullets[i].speed;
         enemy_bullets[i].y += enemy_bullets[i].dy * enemy_bullets[i].speed;
@@ -725,10 +769,10 @@ void update_enemy_bullets_optimized(void) {
         }
     }
     
-    // 批量绘制
+    // 批量绘制敌人子弹
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
         if (enemy_bullets[i].active) {
-            draw_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE, YELLOW);
+            draw_shape(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, enemy_bullets[i].shape, YELLOW);
         }
     }
 }
@@ -763,8 +807,8 @@ void check_collisions_optimized(void) {
                     player_bullets[i].y < enemies[j].y + ENEMY_SIZE) {
                     
                     // 碰撞处理
-                    clear_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
-                    clear_rect(enemies[j].x, enemies[j].y, ENEMY_SIZE, ENEMY_SIZE);
+                    clear_shape(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, player_bullets[i].shape);
+                    clear_shape(enemies[j].x, enemies[j].y, ENEMY_SIZE, enemies[j].shape);
                     
                     player_bullets[i].active = 0;
                     enemies[j].active = 0;
@@ -800,7 +844,7 @@ void check_collisions_optimized(void) {
                     LCD_DrawRectangle(tracking_bullets[i].x, tracking_bullets[i].y, 
                                      tracking_bullets[i].x + TRACKING_BULLET_SIZE - 1, 
                                      tracking_bullets[i].y + TRACKING_BULLET_SIZE - 1, BLACK);
-                    clear_rect(enemies[j].x, enemies[j].y, ENEMY_SIZE, ENEMY_SIZE);
+                    clear_shape(enemies[j].x, enemies[j].y, ENEMY_SIZE, enemies[j].shape);
                     
                     tracking_bullets[i].active = 0;
                     enemies[j].active = 0;
@@ -829,7 +873,7 @@ void check_collisions_optimized(void) {
                 enemy_bullets[i].y >= player.y && 
                 enemy_bullets[i].y < player.y + PLAYER_SIZE) {
                 
-                clear_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
+                clear_shape(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, enemy_bullets[i].shape);
                 enemy_bullets[i].active = 0;
             }
         }
@@ -891,7 +935,7 @@ void game_loop(int difficulty) {
         draw_performance_counters();
         
         // Frame rate control - maintain 60 FPS
-        delay_1ms(1); // Approximately 60 FPS
+        delay_1ms(6); // Approximately 60 FPS
     }
 }
 
