@@ -41,19 +41,23 @@ OF SUCH DAMAGE.
     \param[out] none
     \retval     none
 */
+// Optimized delay function with early exit for better performance
 void delay_1ms(uint32_t count)
 {
-	uint64_t start_mtime, delta_mtime;
+    if (count == 0) return; // Early exit for zero delay
+    
+    uint64_t start_mtime, delta_mtime;
+    uint64_t target_ticks = (SystemCoreClock/4000) * count;
 
-	// Don't start measuruing until we see an mtime tick
-	uint64_t tmp = get_timer_value();
-	do {
-	start_mtime = get_timer_value();
-	} while (start_mtime == tmp);
+    // Don't start measuring until we see an mtime tick
+    uint64_t tmp = get_timer_value();
+    do {
+        start_mtime = get_timer_value();
+    } while (start_mtime == tmp);
 
-	do {
-	delta_mtime = get_timer_value() - start_mtime;
-	}while(delta_mtime <(SystemCoreClock/4000 *count ));
+    do {
+        delta_mtime = get_timer_value() - start_mtime;
+    } while(delta_mtime < target_ticks);
 }
 
 

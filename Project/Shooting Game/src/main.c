@@ -128,42 +128,47 @@ void dynamic_delay_for_fps(int entity_count) {
     last_frame_time = get_timer_value();
 }
 
-// 修正的FPS计数器 - 修复时间单位问题
+// 修正的真实FPS计算 - 基于实际时间测量
 void update_fps_counter(void) {
-    // 获取当前真实时间
+    static uint64_t last_fps_time = 0;
+    static uint32_t frame_count_since_last = 0;
+    
+    // 每帧都增加计数
+    frame_count_since_last++;
+    
     uint64_t current_time = get_timer_value();
     
-    // 增加帧计数
-    fps_frame_count++;
-    
-    // 如果这是第一次测量，记录开始时间
-    if (fps_measurement_start_time == 0) {
-        fps_measurement_start_time = current_time;
-        fps_frame_count = 0;
+    // 初始化
+    if (last_fps_time == 0) {
+        last_fps_time = current_time;
+        frame_count_since_last = 0;
         return;
     }
     
-    // 每30帧更新一次FPS显示（约0.5秒）
-    if (fps_frame_count >= 30) {
-        uint64_t elapsed_time = current_time - fps_measurement_start_time;
-        
-        if (elapsed_time > 0) {
-            // 修正计算：根据delay_1ms的实现，SystemCoreClock/4000对应1ms
-            // 所以SystemCoreClock/4对应1000ms = 1秒
-            uint64_t ticks_per_second = SystemCoreClock / 4;
+    // 计算时间差（以定时器滴答为单位）
+    uint64_t time_diff = current_time - last_fps_time;
+    
+    // 每隔约1秒更新一次FPS（或当帧数达到60时）
+    // 使用SystemCoreClock/4作为每秒的滴答数（根据delay_1ms实现）
+    uint64_t ticks_per_second = SystemCoreClock / 4;
+    
+    // 当时间差超过1秒或帧数达到60时更新
+    if (time_diff >= ticks_per_second || frame_count_since_last >= 60) {
+        if (time_diff > 0) {
+            // 计算真实FPS：帧数 / 时间（秒）
+            // FPS = frame_count / (time_diff / ticks_per_second)
+            // 重排为：FPS = (frame_count * ticks_per_second) / time_diff
+            uint64_t calculated_fps = (frame_count_since_last * ticks_per_second) / time_diff;
             
-            // FPS = 帧数 / 秒数 = 帧数 / (elapsed_ticks / ticks_per_second)
-            // 为了避免浮点运算，重新排列：FPS = (帧数 * ticks_per_second) / elapsed_ticks
-            displayed_fps = (fps_frame_count * ticks_per_second) / elapsed_time;
-            
-            // 限制显示范围
+            // 转换为int并限制范围
+            displayed_fps = (int)calculated_fps;
             if (displayed_fps > 99) displayed_fps = 99;
             if (displayed_fps < 1) displayed_fps = 1;
         }
         
-        // 重置测量
-        fps_measurement_start_time = current_time;
-        fps_frame_count = 0;
+        // 重置计数器
+        last_fps_time = current_time;
+        frame_count_since_last = 0;
     }
 }
 
