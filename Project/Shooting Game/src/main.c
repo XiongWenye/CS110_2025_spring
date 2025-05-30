@@ -10,7 +10,7 @@
 #define ENEMY_SIZE 3
 #define BULLET_SIZE 2
 #define MAX_BULLETS 300         // 增加到300个玩家子弹
-#define MAX_ENEMY_BULLETS 300   // 增加到300个敌人子弹
+#define MAX_ENEMY_BULLETS 500   // 增加到300个敌人子弹
 #define MAX_ENEMIES 200         
 
 // FPS and entity counting constants
@@ -46,29 +46,9 @@ Bullet player_bullets[MAX_BULLETS];
 Bullet enemy_bullets[MAX_ENEMY_BULLETS];
 Enemy enemies[MAX_ENEMIES];
 
+
 // Random number generator state
 static unsigned int rand_seed = 12345;
-
-// Performance counters
-static unsigned long frame_times[FPS_SAMPLE_FRAMES];
-static int frame_index = 0;
-static int displayed_fps = 60;
-static int displayed_entities = 0;
-static int entity_update_counter = 0;
-static unsigned long frame_counter = 0;
-// 添加这些变量来避免频闪
-static int last_displayed_fps = -1;
-static int last_displayed_entities = -1;
-
-// 添加真实时间测量变量
-static uint64_t fps_measurement_start_time = 0;
-static uint32_t fps_frame_count = 0;
-
-// 动态帧率控制变量
-static uint64_t last_frame_time = 0;
-static int target_frame_time_ms = 16; // Start with 60 FPS target
-static int min_frame_time_ms = 33;    // Maximum 30 FPS (33ms)
-static int skip_frame_counter = 0;    // 跳帧计数器
 
 void Inp_init(void) {
   rcu_periph_clock_enable(RCU_GPIOA);
@@ -91,84 +71,66 @@ int simple_rand(void) {
     return (rand_seed / 65536) % 32768;
 }
 
-// 动态延迟函数 - 根据实体数量调整
-void dynamic_delay_for_fps(int entity_count) {
-    uint64_t current_time = get_timer_value();
-    
-    // Calculate actual frame time
-    uint64_t frame_duration = 0;
-    if (last_frame_time != 0) {
-        frame_duration = current_time - last_frame_time;
-    }
-    
-    // Adjust target frame time based on entity count
-    if (entity_count > 400) {
-        target_frame_time_ms = 33; // 30 FPS when very busy
-    } else if (entity_count > 250) {
-        target_frame_time_ms = 25; // 40 FPS when busy
-    } else if (entity_count > 150) {
-        target_frame_time_ms = 20; // 50 FPS when moderately busy
-    } else {
-        target_frame_time_ms = 16; // 60 FPS when not busy
-    }
-    
-    // Convert frame duration to milliseconds
-    uint64_t ticks_per_ms = (SystemCoreClock / 4) / 1000;
-    uint32_t actual_frame_time_ms = 0;
-    if (ticks_per_ms > 0) {
-        actual_frame_time_ms = frame_duration / ticks_per_ms;
-    }
-    
-    // Only delay if we're running faster than target
-    if (actual_frame_time_ms < target_frame_time_ms) {
-        uint32_t delay_needed = target_frame_time_ms - actual_frame_time_ms;
-        delay_1ms(delay_needed);
-    }
-    
-    last_frame_time = get_timer_value();
-}
 
-// 修正的真实FPS计算 - 基于实际时间测量
+
+
+
+
+// 添加这些变量到性能计数器部分
+// Performance counters
+static unsigned long frame_times[FPS_SAMPLE_FRAMES];
+static int frame_index = 0;
+static int displayed_fps = 60;
+static int displayed_entities = 0;
+static int entity_update_counter = 0;
+static unsigned long frame_counter = 0;
+// 添加这些变量来避免频闪
+static int last_displayed_fps = -1;
+static int last_displayed_entities = -1;
+
+// 添加真实时间测量变量
+static uint64_t fps_measurement_start_time = 0;
+static uint32_t fps_frame_count = 0;
+
+// ...existing code...
+
+// 真实FPS计数器 - 使用get_timer_value()测量
 void update_fps_counter(void) {
-    static uint64_t last_fps_time = 0;
-    static uint32_t frame_count_since_last = 0;
     
-    // 每帧都增加计数
-    frame_count_since_last++;
-    
+    // 获取当前真实时间
     uint64_t current_time = get_timer_value();
     
-    // 初始化
-    if (last_fps_time == 0) {
-        last_fps_time = current_time;
-        frame_count_since_last = 0;
+    // 增加帧计数
+    fps_frame_count++;
+    
+    // 如果这是第一次测量，记录开始时间
+    if (fps_measurement_start_time == 0) {
+        fps_measurement_start_time = current_time;
+        fps_frame_count = 0;
         return;
     }
     
-    // 计算时间差（以定时器滴答为单位）
-    uint64_t time_diff = current_time - last_fps_time;
-    
-    // 每隔约1秒更新一次FPS（或当帧数达到60时）
-    // 使用SystemCoreClock/4作为每秒的滴答数（根据delay_1ms实现）
-    uint64_t ticks_per_second = SystemCoreClock / 4;
-    
-    // 当时间差超过1秒或帧数达到60时更新
-    if (time_diff >= ticks_per_second || frame_count_since_last >= 60) {
-        if (time_diff > 0) {
-            // 计算真实FPS：帧数 / 时间（秒）
-            // FPS = frame_count / (time_diff / ticks_per_second)
-            // 重排为：FPS = (frame_count * ticks_per_second) / time_diff
-            uint64_t calculated_fps = (frame_count_since_last * ticks_per_second) / time_diff;
+    // 每30帧更新一次FPS显示（约0.5秒）
+    if (fps_frame_count >= 30) {
+        uint64_t elapsed_time = current_time - fps_measurement_start_time;
+        
+        if (elapsed_time > 0) {
+            // 计算真实FPS
+            // elapsed_time 的单位是定时器滴答
+            // SystemCoreClock/4 是每秒的滴答数（根据你的delay_1ms实现）
+            uint64_t ticks_per_second = SystemCoreClock / 4;
             
-            // 转换为int并限制范围
-            displayed_fps = (int)calculated_fps;
+            // FPS = 帧数 / 秒数 = 帧数 / (elapsed_ticks / ticks_per_second)
+            displayed_fps = (fps_frame_count * ticks_per_second) / elapsed_time;
+            
+            // 限制显示范围
             if (displayed_fps > 99) displayed_fps = 99;
             if (displayed_fps < 1) displayed_fps = 1;
         }
         
-        // 重置计数器
-        last_fps_time = current_time;
-        frame_count_since_last = 0;
+        // 重置测量
+        fps_measurement_start_time = current_time;
+        fps_frame_count = 0;
     }
 }
 
@@ -264,6 +226,7 @@ void safe_draw_pixel(int x, int y, u16 color) {
     }
 }
 
+
 // Clear a rectangle (erase)
 void clear_rect(int x, int y, int width, int height) {
     draw_rect(x, y, width, height, BLACK);
@@ -303,10 +266,6 @@ void init_game(void) {
         frame_times[i] = 16; // Assume 16ms initially
     }
     frame_counter = 0;
-    
-    // 初始化动态帧率控制
-    last_frame_time = get_timer_value();
-    skip_frame_counter = 0;
 }
 
 // Spawn a random enemy
@@ -495,7 +454,7 @@ void update_player_bullets_optimized(void) {
 
 #define update_player_bullets update_player_bullets_optimized
 
-// Update enemies with movement and random spawning - 支持跳帧
+// Update enemies with movement and random spawning
 void update_enemies(void) {
     static int spawn_timer = 0;
     static int formation_timer = 0;
@@ -503,12 +462,8 @@ void update_enemies(void) {
     spawn_timer++;
     formation_timer++;
     
-    // 根据实体数量调整生成频率
-    int entity_count = count_active_entities();
-    int spawn_interval = (entity_count > 300) ? 60 : 30;  // 实体多时减少生成
-    
     // Spawn individual enemies randomly
-    if (spawn_timer >= spawn_interval) {
+    if (spawn_timer >= 30) {  // Every 0.5 seconds at 60 FPS
         spawn_timer = 0;
         if (simple_rand() % 100 < 30) {  // 30% chance to spawn
             spawn_random_enemy();
@@ -518,7 +473,7 @@ void update_enemies(void) {
     // Spawn enemy formations occasionally
     if (formation_timer >= 300) {  // Every 5 seconds
         formation_timer = 0;
-        if (simple_rand() % 100 < 20 && entity_count < 200) {  // 实体多时不生成编队
+        if (simple_rand() % 100 < 20) {  // 20% chance to spawn formation
             spawn_enemy_formation();
         }
     }
@@ -581,11 +536,7 @@ void update_enemy_bullets_optimized(void) {
         if (enemy_bullets[i].active) active_enemy_bullets++;
     }
     
-    // 根据总实体数动态限制敌人子弹
-    int entity_count = count_active_entities();
-    int max_enemy_bullets = (entity_count > 400) ? 100 : 200;
-    
-    if (active_enemy_bullets < max_enemy_bullets) {
+    if (active_enemy_bullets < 1000) { // 限制敌人子弹数量
         for (int i = 0; i < MAX_ENEMIES; i++) {
             if (!enemies[i].active) continue;
             
@@ -593,16 +544,11 @@ void update_enemy_bullets_optimized(void) {
             
             int shoot_interval;
             switch (enemies[i].type) {
-                case 0: shoot_interval = 120; break;
+                case 0: shoot_interval = 120; break; // 降低射击频率
                 case 1: shoot_interval = 80; break;
                 case 2: shoot_interval = 160; break;
                 case 3: shoot_interval = 60; break;
                 default: shoot_interval = 120; break;
-            }
-            
-            // 在高负载时增加射击间隔
-            if (entity_count > 300) {
-                shoot_interval *= 2;
             }
             
             if (enemies[i].shoot_timer >= shoot_interval) {
@@ -648,7 +594,6 @@ void update_enemy_bullets_optimized(void) {
 }
 
 #define update_enemy_bullets update_enemy_bullets_optimized
-
 // 优化的碰撞检测 - 使用空间分割
 void check_collisions_optimized(void) {
     // 只检查屏幕内的物体
@@ -734,7 +679,7 @@ int count_active_objects(void) {
     return bullet_count + enemy_count;
 }
 
-// 优化的游戏循环 - 支持动态帧率和跳帧
+// Main game loop
 void game_loop(int difficulty) {
     init_game();
     
@@ -745,39 +690,26 @@ void game_loop(int difficulty) {
         // Increment frame counter
         frame_counter++;
         
-        // 获取当前实体数量
-        int current_entities = count_active_entities();
+        // Update performance counters
+        update_fps_counter();
+        update_entity_counter();
         
-        // 总是更新关键系统
+        // Update game objects
         update_player();
+        
+        // Check collisions BEFORE updating bullets
         check_collisions();
+        
+        // Then update bullets (this will clear inactive bullets properly)
         update_player_bullets();
+        update_enemies();
+        update_enemy_bullets();
         
-        // 根据负载情况决定是否跳帧
-        skip_frame_counter++;
-        int should_skip_frame = 0;
+        // Draw performance counters (at the end to avoid being overwritten)
+        draw_performance_counters();
         
-        if (current_entities > 400) {
-            should_skip_frame = (skip_frame_counter % 3 != 0); // 跳过2/3帧
-        } else if (current_entities > 250) {
-            should_skip_frame = (skip_frame_counter % 2 != 0); // 跳过1/2帧
-        }
-        
-        // 非关键系统可以跳帧
-        if (!should_skip_frame) {
-            update_enemies();
-            update_enemy_bullets();
-        }
-        
-        // 性能计数器更新频率降低
-        if (frame_counter % 4 == 0) {
-            update_fps_counter();
-            update_entity_counter();
-            draw_performance_counters();
-        }
-        
-        // 使用动态延迟控制帧率
-        dynamic_delay_for_fps(current_entities);
+        // Frame rate control - maintain 60 FPS
+        delay_1ms(16); // Approximately 60 FPS
     }
 }
 
