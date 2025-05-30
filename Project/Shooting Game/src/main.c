@@ -6,13 +6,12 @@
 // Game constants - 大幅增加数量
 #define SCREEN_WIDTH 120
 #define SCREEN_HEIGHT 80
-#define PLAYER_SIZE 4
-#define ENEMY_SIZE 3
-#define BULLET_SIZE 2
+#define PLAYER_SIZE 6
+#define ENEMY_SIZE 8
+#define BULLET_SIZE 4
 #define MAX_BULLETS 300         // 增加到300个玩家子弹
 #define MAX_ENEMY_BULLETS 300   // 增加到300个敌人子弹
-#define MAX_ENEMIES 200         
-
+#define MAX_ENEMIES 100
 // 追踪子弹相关常量
 #define MAX_TRACKING_BULLETS 50    // 追踪子弹最大数量
 #define TRACKING_BULLET_SIZE 4     // 追踪子弹尺寸（正方形）
@@ -117,7 +116,7 @@ void update_fps_counter(void) {
     }
     
     // 每30帧更新一次FPS显示（约0.5秒）
-    if (fps_frame_count >= 1) {
+    if (fps_frame_count >= 6) {
         uint64_t elapsed_time = current_time - fps_measurement_start_time;
         
         if (elapsed_time > 0) {
@@ -141,7 +140,7 @@ void update_fps_counter(void) {
 }
 
 // 优化的绘制函数 - 减少像素操作
-void draw_rect_optimized(int x, int y, int width, int height, u16 color) {
+void draw_rect(int x, int y, int width, int height, u16 color) {
     // 边界检查一次，而不是每个像素都检查
     int start_x = (x < 0) ? 0 : x;
     int start_y = (y < 0) ? 0 : y;
@@ -158,9 +157,6 @@ void draw_rect_optimized(int x, int y, int width, int height, u16 color) {
         }
     }
 }
-
-// 替换所有draw_rect调用为draw_rect_optimized
-#define draw_rect draw_rect_optimized
 
 int count_active_entities(void) {
     int count = 1; // Player counts as 1
@@ -184,7 +180,7 @@ int count_active_entities(void) {
 // 减少计数器更新频率
 void update_entity_counter_optimized(void) {
     entity_update_counter++;
-    if (entity_update_counter >= 1) {  // 每20帧更新一次
+    if (entity_update_counter >= 10) {  // 每20帧更新一次
         entity_update_counter = 0;
         displayed_entities = count_active_entities();
         if (displayed_entities > 999) displayed_entities = 999;
@@ -193,29 +189,35 @@ void update_entity_counter_optimized(void) {
 
 #define update_entity_counter update_entity_counter_optimized
 
+int count_fps = 0;
 // 修改绘制函数 - 只在数值变化时重绘
 void draw_performance_counters(void) {
     // 只在FPS变化时重绘FPS区域
-    if (displayed_fps != last_displayed_fps) {
+
+    if (displayed_fps != last_displayed_fps && count_fps % 10 == 0) { 
         // 清除FPS区域
-        for (int x = SCREEN_WIDTH + 5; x < SCREEN_WIDTH; x++) {
+        count_fps = 0;
+        for (int x = SCREEN_WIDTH + 5; x < SCREEN_WIDTH; x++)
+        {
             for (int y = 0; y < 25; y++) {
                 LCD_DrawPoint(x, y, BLACK);
             }
         }
-        
+
         // 重绘FPS
         LCD_ShowString(SCREEN_WIDTH + 5 , 5, (u8*)"FPS", WHITE);
         LCD_ShowNum(SCREEN_WIDTH + 5, 20, displayed_fps, 2, WHITE);
         
         last_displayed_fps = displayed_fps;
+    } else if (displayed_fps != last_displayed_fps) {
+        count_fps++;
     }
     
     // 只在实体数变化时重绘实体区域
     if (displayed_entities != last_displayed_entities) {
         // 清除实体区域
         for (int x = SCREEN_WIDTH + 5; x < SCREEN_WIDTH; x++) {
-            for (int y = 25; y < 50; y++) {
+            for (int y = 25; y < 55; y++) {
                 LCD_DrawPoint(x, y, BLACK);
             }
         }
@@ -318,7 +320,7 @@ void init_game(void) {
     
     // Initialize performance counters
     for (int i = 0; i < FPS_SAMPLE_FRAMES; i++) {
-        frame_times[i] = 6; // Assume 16ms initially
+        frame_times[i] = 1; // Assume 16ms initially
     }
     frame_counter = 0;
 }
@@ -891,7 +893,7 @@ void game_loop(int difficulty) {
         draw_performance_counters();
         
         // Frame rate control - maintain 60 FPS
-        delay_1ms(6); // Approximately 60 FPS
+        delay_1ms(1); // Approximately 60 FPS
     }
 }
 
