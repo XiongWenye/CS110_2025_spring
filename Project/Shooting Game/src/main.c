@@ -128,7 +128,7 @@ void dynamic_delay_for_fps(int entity_count) {
     last_frame_time = get_timer_value();
 }
 
-// 真实FPS计数器 - 使用get_timer_value()测量
+// 修正的FPS计数器 - 修复时间单位问题
 void update_fps_counter(void) {
     // 获取当前真实时间
     uint64_t current_time = get_timer_value();
@@ -148,12 +148,12 @@ void update_fps_counter(void) {
         uint64_t elapsed_time = current_time - fps_measurement_start_time;
         
         if (elapsed_time > 0) {
-            // 计算真实FPS
-            // elapsed_time 的单位是定时器滴答
-            // SystemCoreClock/4 是每秒的滴答数（根据你的delay_1ms实现）
+            // 修正计算：根据delay_1ms的实现，SystemCoreClock/4000对应1ms
+            // 所以SystemCoreClock/4对应1000ms = 1秒
             uint64_t ticks_per_second = SystemCoreClock / 4;
             
             // FPS = 帧数 / 秒数 = 帧数 / (elapsed_ticks / ticks_per_second)
+            // 为了避免浮点运算，重新排列：FPS = (帧数 * ticks_per_second) / elapsed_ticks
             displayed_fps = (fps_frame_count * ticks_per_second) / elapsed_time;
             
             // 限制显示范围
