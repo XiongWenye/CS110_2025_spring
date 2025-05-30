@@ -10,12 +10,17 @@
 #define ENEMY_SIZE 3
 #define BULLET_SIZE 2
 #define MAX_BULLETS 300         // 增加到300个玩家子弹
-#define MAX_ENEMY_BULLETS 500   // 增加到300个敌人子弹
+#define MAX_ENEMY_BULLETS 500   // 增加到500个敌人子弹
 #define MAX_ENEMIES 200         
 
 // FPS and entity counting constants
 #define FPS_SAMPLE_FRAMES 8     // Sample over 8 frames (0.133s at 60fps)
 #define ENTITY_UPDATE_INTERVAL 3  // Update entity counter every 4 frames
+
+// Performance optimization constants
+#define MAX_DIRTY_RECTS 200
+#define COLLISION_CHECK_INTERVAL 2  // Check collisions every 2 frames
+#define BULLET_UPDATE_INTERVAL 1    // Update bullets every frame, but optimize
 
 // Player structure
 typedef struct {
@@ -29,6 +34,7 @@ typedef struct {
     int active;
     int speed;
     int dx, dy;  // Direction vectors
+    int last_x, last_y;  // 记录上一帧位置，用于脏矩形
 } Bullet;
 
 // Enemy structure
@@ -38,7 +44,14 @@ typedef struct {
     int speed;
     int shoot_timer;
     int type;  // 新增：敌人类型
+    int last_x, last_y;  // 记录上一帧位置
 } Enemy;
+
+// Dirty rectangle for partial screen updates
+typedef struct {
+    int x, y, width, height;
+    int active;
+} DirtyRect;
 
 // Game state
 Player player;
@@ -46,9 +59,29 @@ Bullet player_bullets[MAX_BULLETS];
 Bullet enemy_bullets[MAX_ENEMY_BULLETS];
 Enemy enemies[MAX_ENEMIES];
 
+// Dirty rectangle system
+static DirtyRect dirty_rects[MAX_DIRTY_RECTS];
+static int dirty_rect_count = 0;
 
 // Random number generator state
 static unsigned int rand_seed = 12345;
+
+// Performance counters
+static unsigned long frame_times[FPS_SAMPLE_FRAMES];
+static int frame_index = 0;
+static int displayed_fps = 60;
+static int displayed_entities = 0;
+static int entity_update_counter = 0;
+static unsigned long frame_counter = 0;
+static int last_displayed_fps = -1;
+static int last_displayed_entities = -1;
+static uint64_t fps_measurement_start_time = 0;
+static uint32_t fps_frame_count = 0;
+
+// Performance optimization variables
+static int collision_check_counter = 0;
+static int bullet_update_counter = 0;
+static int performance_update_counter = 0;
 
 void Inp_init(void) {
   rcu_periph_clock_enable(RCU_GPIOA);
@@ -71,90 +104,83 @@ int simple_rand(void) {
     return (rand_seed / 65536) % 32768;
 }
 
+// 新增：快速矩形填充函数 - 利用LCD_Fill硬件加速
+void LCD_FillRect_Fast(u16 x, u16 y, u16 width, u16 height, u16 color) {
+    // 边界检查
+    if (x >= SCREEN_WIDTH || y >= SCREEN_HEIGHT || width == 0 || height == 0) return;
+    
+    // 计算实际绘制区域
+    u16 end_x = (x + width > SCREEN_WIDTH) ? SCREEN_WIDTH - 1 : x + width - 1;
+    u16 end_y = (y + height > SCREEN_HEIGHT) ? SCREEN_HEIGHT - 1 : y + height - 1;
+    
+    if (x <= end_x && y <= end_y) {
+        LCD_Fill(x, y, end_x, end_y, color);
+    }
+}
 
+// 新增：批量绘制点的优化函数
+void LCD_DrawPoint_Batch(u16 *x_coords, u16 *y_coords, u16 *colors, int count) {
+    for (int i = 0; i < count; i++) {
+        if (x_coords[i] < SCREEN_WIDTH && y_coords[i] < SCREEN_HEIGHT) {
+            LCD_DrawPoint(x_coords[i], y_coords[i], colors[i]);
+        }
+    }
+}
 
+// Dirty rectangle management
+void add_dirty_rect(int x, int y, int width, int height) {
+    if (dirty_rect_count < MAX_DIRTY_RECTS) {
+        dirty_rects[dirty_rect_count].x = x;
+        dirty_rects[dirty_rect_count].y = y;
+        dirty_rects[dirty_rect_count].width = width;
+        dirty_rects[dirty_rect_count].height = height;
+        dirty_rects[dirty_rect_count].active = 1;
+        dirty_rect_count++;
+    }
+}
 
-
-
-// 添加这些变量到性能计数器部分
-// Performance counters
-static unsigned long frame_times[FPS_SAMPLE_FRAMES];
-static int frame_index = 0;
-static int displayed_fps = 60;
-static int displayed_entities = 0;
-static int entity_update_counter = 0;
-static unsigned long frame_counter = 0;
-// 添加这些变量来避免频闪
-static int last_displayed_fps = -1;
-static int last_displayed_entities = -1;
-
-// 添加真实时间测量变量
-static uint64_t fps_measurement_start_time = 0;
-static uint32_t fps_frame_count = 0;
-
-// ...existing code...
+void clear_dirty_rects(void) {
+    for (int i = 0; i < dirty_rect_count; i++) {
+        if (dirty_rects[i].active) {
+            // 使用硬件加速的LCD_Fill清除脏区域
+            LCD_FillRect_Fast(dirty_rects[i].x, dirty_rects[i].y, 
+                             dirty_rects[i].width, dirty_rects[i].height, BLACK);
+        }
+    }
+    dirty_rect_count = 0;
+}
 
 // 真实FPS计数器 - 使用get_timer_value()测量
 void update_fps_counter(void) {
-    
-    // 获取当前真实时间
     uint64_t current_time = get_timer_value();
-    
-    // 增加帧计数
     fps_frame_count++;
     
-    // 如果这是第一次测量，记录开始时间
     if (fps_measurement_start_time == 0) {
         fps_measurement_start_time = current_time;
         fps_frame_count = 0;
         return;
     }
     
-    // 每30帧更新一次FPS显示（约0.5秒）
     if (fps_frame_count >= 30) {
         uint64_t elapsed_time = current_time - fps_measurement_start_time;
         
         if (elapsed_time > 0) {
-            // 计算真实FPS
-            // elapsed_time 的单位是定时器滴答
-            // SystemCoreClock/4 是每秒的滴答数（根据你的delay_1ms实现）
             uint64_t ticks_per_second = SystemCoreClock / 4;
-            
-            // FPS = 帧数 / 秒数 = 帧数 / (elapsed_ticks / ticks_per_second)
             displayed_fps = (fps_frame_count * ticks_per_second) / elapsed_time;
             
-            // 限制显示范围
             if (displayed_fps > 99) displayed_fps = 99;
             if (displayed_fps < 1) displayed_fps = 1;
         }
         
-        // 重置测量
         fps_measurement_start_time = current_time;
         fps_frame_count = 0;
     }
 }
 
-// 优化的绘制函数 - 减少像素操作
-void draw_rect_optimized(int x, int y, int width, int height, u16 color) {
-    // 边界检查一次，而不是每个像素都检查
-    int start_x = (x < 0) ? 0 : x;
-    int start_y = (y < 0) ? 0 : y;
-    int end_x = (x + width > SCREEN_WIDTH) ? SCREEN_WIDTH : x + width;
-    int end_y = (y + height > SCREEN_HEIGHT) ? SCREEN_HEIGHT : y + height;
-    
-    // 如果完全在屏幕外，直接返回
-    if (start_x >= end_x || start_y >= end_y) return;
-    
-    // 批量绘制，减少函数调用
-    for (int j = start_y; j < end_y; j++) {
-        for (int i = start_x; i < end_x; i++) {
-            LCD_DrawPoint(i, j, color);
-        }
-    }
+// 超级优化的绘制函数 - 使用硬件加速
+void draw_rect_ultra_fast(int x, int y, int width, int height, u16 color) {
+    LCD_FillRect_Fast(x, y, width, height, color);
 }
-
-// 替换所有draw_rect调用为draw_rect_optimized
-#define draw_rect draw_rect_optimized
 
 int count_active_entities(void) {
     int count = 1; // Player counts as 1
@@ -172,67 +198,45 @@ int count_active_entities(void) {
     return count;
 }
 
-// 减少计数器更新频率
 void update_entity_counter_optimized(void) {
     entity_update_counter++;
-    if (entity_update_counter >= 20) {  // 每20帧更新一次
+    if (entity_update_counter >= 30) {  // 每30帧更新一次，减少频率
         entity_update_counter = 0;
         displayed_entities = count_active_entities();
         if (displayed_entities > 999) displayed_entities = 999;
     }
 }
 
-#define update_entity_counter update_entity_counter_optimized
-
-// 修改绘制函数 - 只在数值变化时重绘
 void draw_performance_counters(void) {
-    // 只在FPS变化时重绘FPS区域
     if (displayed_fps != last_displayed_fps) {
-        // 清除FPS区域
-        for (int x = SCREEN_WIDTH - 40; x < SCREEN_WIDTH; x++) {
-            for (int y = 0; y < 25; y++) {
-                LCD_DrawPoint(x, y, BLACK);
-            }
-        }
+        // 使用硬件加速清除FPS区域
+        LCD_FillRect_Fast(SCREEN_WIDTH - 40, 0, 40, 25, BLACK);
         
-        // 重绘FPS
-        LCD_ShowString(SCREEN_WIDTH + 5 , 5, (u8*)"FPS", WHITE);
-        LCD_ShowNum(SCREEN_WIDTH + 5, 20, displayed_fps, 2, WHITE);
-        
+        LCD_ShowString(SCREEN_WIDTH - 35, 5, (u8*)"FPS", WHITE);
+        LCD_ShowNum(SCREEN_WIDTH - 20, 15, displayed_fps, 2, WHITE);
         last_displayed_fps = displayed_fps;
     }
     
-    // 只在实体数变化时重绘实体区域
     if (displayed_entities != last_displayed_entities) {
-        // 清除实体区域
-        for (int x = SCREEN_WIDTH - 40; x < SCREEN_WIDTH; x++) {
-            for (int y = 25; y < 50; y++) {
-                LCD_DrawPoint(x, y, BLACK);
-            }
-        }
+        // 使用硬件加速清除实体计数区域
+        LCD_FillRect_Fast(SCREEN_WIDTH - 40, 25, 40, 25, BLACK);
         
-        // 重绘实体计数
-        LCD_ShowString(SCREEN_WIDTH + 5, 35, (u8*)"ENT", WHITE);
-        LCD_ShowNum(SCREEN_WIDTH +5 , 50, displayed_entities, 3, WHITE);
-        
+        LCD_ShowString(SCREEN_WIDTH - 35, 30, (u8*)"ENT", WHITE);
+        LCD_ShowNum(SCREEN_WIDTH - 25, 40, displayed_entities, 3, WHITE);
         last_displayed_entities = displayed_entities;
     }
 }
 
-// Safe LCD drawing function with bounds checking
 void safe_draw_pixel(int x, int y, u16 color) {
     if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT) {
         LCD_DrawPoint(x, y, color);
     }
 }
 
-
-// Clear a rectangle (erase)
 void clear_rect(int x, int y, int width, int height) {
-    draw_rect(x, y, width, height, BLACK);
+    draw_rect_ultra_fast(x, y, width, height, BLACK);
 }
 
-// Initialize game objects 
 void init_game(void) {
     // Initialize player
     player.x = SCREEN_WIDTH / 2;
@@ -244,88 +248,90 @@ void init_game(void) {
         player_bullets[i].active = 0;
         player_bullets[i].dx = 0;
         player_bullets[i].dy = 0;
+        player_bullets[i].last_x = -1;
+        player_bullets[i].last_y = -1;
     }
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
         enemy_bullets[i].active = 0;
         enemy_bullets[i].dx = 0;
         enemy_bullets[i].dy = 0;
+        enemy_bullets[i].last_x = -1;
+        enemy_bullets[i].last_y = -1;
     }
     
-    // Initialize enemies - 初始生成一些敌人
+    // Initialize enemies
     for (int i = 0; i < MAX_ENEMIES; i++) {
-        enemies[i].active = 0;  // 开始时都不活跃，随机生成
+        enemies[i].active = 0;
+        enemies[i].last_x = -1;
+        enemies[i].last_y = -1;
     }
     
     // 生成初始敌人
-    for (int i = 0; i < 10; i++) {  // 初始生成10个敌人
+    for (int i = 0; i < 5; i++) {  // 减少初始敌人数量
         spawn_random_enemy();
     }
     
     // Initialize performance counters
     for (int i = 0; i < FPS_SAMPLE_FRAMES; i++) {
-        frame_times[i] = 30; // Assume 16ms initially
+        frame_times[i] = 16;
     }
     frame_counter = 0;
+    dirty_rect_count = 0;
 }
 
-// Spawn a random enemy
 void spawn_random_enemy(void) {
-    // Find an inactive enemy slot
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (!enemies[i].active) {
-            // Random spawn position at top of screen
             enemies[i].x = simple_rand() % (SCREEN_WIDTH - ENEMY_SIZE);
-            enemies[i].y = (simple_rand() % 20 + 5);  // Spawn above screen
+            enemies[i].y = -(simple_rand() % 10 + 5);
             enemies[i].active = 1;
-            enemies[i].speed = -1 + simple_rand() % 3;  // Random speed 1-3
-            enemies[i].shoot_timer = simple_rand() % 60 + 20;  // Random initial timer
-            enemies[i].type = simple_rand() % 4;  // 四种类型的敌人 (0-3)
+            enemies[i].speed = 1 + simple_rand() % 2;  // 减少速度范围
+            enemies[i].shoot_timer = simple_rand() % 80 + 40;
+            enemies[i].type = simple_rand() % 4;
+            enemies[i].last_x = -1;
+            enemies[i].last_y = -1;
             break;
         }
     }
 }
 
-// Spawn enemy formation
 void spawn_enemy_formation(void) {
-    // Spawn a formation of 3-5 enemies
-    int formation_size = 10 + simple_rand() % 3;  // 3-5 enemies
-    int start_x = simple_rand() % (SCREEN_WIDTH - formation_size * 25);
+    int formation_size = 3 + simple_rand() % 3;  // 减少formation大小
+    int start_x = simple_rand() % (SCREEN_WIDTH - formation_size * 15);
     
     for (int i = 0; i < formation_size; i++) {
         for (int j = 0; j < MAX_ENEMIES; j++) {
             if (!enemies[j].active) {
-                enemies[j].x = start_x + i * 25;
-                enemies[j].y = -(simple_rand() % 15 + 5);
+                enemies[j].x = start_x + i * 15;
+                enemies[j].y = -(simple_rand() % 10 + 5);
                 enemies[j].active = 1;
                 enemies[j].speed = 1;
-                enemies[j].shoot_timer = simple_rand() % 40;
+                enemies[j].shoot_timer = simple_rand() % 60;
                 enemies[j].type = simple_rand() % 4;
+                enemies[j].last_x = -1;
+                enemies[j].last_y = -1;
                 break;
             }
         }
     }
 }
 
-// Handle player input and movement
 void update_player(void) {
     static int prev_x = -1, prev_y = -1;
-    
-    // 添加静态变量来防抖动
     static int button1_debounce = 0;
     static int button2_debounce = 0;
     static int debounce_counter = 0;
     
-    // 防抖动计数器
     if (debounce_counter > 0) {
         debounce_counter--;
     }
     
-    // Clear previous player position
+    // Add previous position to dirty rects
     if (prev_x >= 0 && prev_y >= 0) {
-        clear_rect(prev_x, prev_y, PLAYER_SIZE, PLAYER_SIZE);
+        add_dirty_rect(prev_x, prev_y, PLAYER_SIZE, PLAYER_SIZE);
     }
     
-    // Handle movement - 只在没有防抖动时检查移动
+    // Handle movement
     if (debounce_counter == 0) {
         if (Get_Button(JOY_LEFT) && player.x > 0) {
             player.x -= player.speed;
@@ -341,60 +347,45 @@ void update_player(void) {
         }
     }
 
-    // Handle BUTTON_1 - 高频射击
+    // Handle BUTTON_1 - 减少射击频率
     if (Get_Button(BUTTON_1)) {
         if (button1_debounce == 0) {
-            button1_debounce = 3;  // 减少防抖动时间，增加射击频率
-            debounce_counter = 1;   // 减少全局延迟
+            button1_debounce = 8;  // 增加防抖动时间，降低射击频率
+            debounce_counter = 3;
             
-            // 发射三连发子弹
-            for (int burst = 0; burst < 3; burst++) {
-                for (int i = 0; i < MAX_BULLETS; i++) {
-                    if (!player_bullets[i].active) {
-                        player_bullets[i].x = player.x + PLAYER_SIZE / 2 + burst - 1;
-                        player_bullets[i].y = player.y - burst * 2;
-                        player_bullets[i].active = 1;
-                        player_bullets[i].speed = 4;
-                        player_bullets[i].dx = 0;
-                        player_bullets[i].dy = -1;  // Move up
-                        break;
-                    }
+            // 发射单发子弹
+            for (int i = 0; i < MAX_BULLETS; i++) {
+                if (!player_bullets[i].active) {
+                    player_bullets[i].x = player.x + PLAYER_SIZE / 2;
+                    player_bullets[i].y = player.y;
+                    player_bullets[i].active = 1;
+                    player_bullets[i].speed = 4;
+                    player_bullets[i].dx = 0;
+                    player_bullets[i].dy = -1;
+                    player_bullets[i].last_x = -1;
+                    player_bullets[i].last_y = -1;
+                    break;
                 }
             }
         }
     } else {
-        button1_debounce = 0;  // Reset when button is released
+        button1_debounce = 0;
     }
 
-    // Handle BUTTON_2 - 超级扩散射击
+    // Handle BUTTON_2 - 减少扩散射击数量和频率
     if (Get_Button(BUTTON_2)) {
         if (button2_debounce == 0) {
-            button2_debounce = 15;  // 15 frame debounce for spread shot
-            debounce_counter = 5;   // 5 frame delay for all inputs
+            button2_debounce = 25;  // 大幅增加防抖动时间
+            debounce_counter = 10;
             
-            // 发射16方向的子弹（更密集）
-            int directions[16][2] = {
-                {0, -1},   // Up
-                {1, -2},   // Up-Right steep
-                {1, -1},   // Up-Right
-                {2, -1},   // Up-Right shallow
-                {1, 0},    // Right
-                {2, 1},    // Down-Right shallow
-                {1, 1},    // Down-Right
-                {1, 2},    // Down-Right steep
-                {0, 1},    // Down
-                {-1, 2},   // Down-Left steep
-                {-1, 1},   // Down-Left
-                {-2, 1},   // Down-Left shallow
-                {-1, 0},   // Left
-                {-2, -1},  // Up-Left shallow
-                {-1, -1},  // Up-Left
-                {-1, -2}   // Up-Left steep
+            // 减少到5方向，降低复杂度
+            int directions[5][2] = {
+                {0, -1}, {1, -1}, {-1, -1}, {1, 0}, {-1, 0}
             };
             
             int bullets_fired = 0;
-            for (int dir = 0; dir < 16 && bullets_fired < 16; dir++) {
-                for (int i = 0; i < MAX_BULLETS && bullets_fired < 16; i++) {
+            for (int dir = 0; dir < 5 && bullets_fired < 5; dir++) {
+                for (int i = 0; i < MAX_BULLETS && bullets_fired < 5; i++) {
                     if (!player_bullets[i].active) {
                         player_bullets[i].x = player.x + PLAYER_SIZE / 2;
                         player_bullets[i].y = player.y;
@@ -402,6 +393,8 @@ void update_player(void) {
                         player_bullets[i].speed = 3;
                         player_bullets[i].dx = directions[dir][0];
                         player_bullets[i].dy = directions[dir][1];
+                        player_bullets[i].last_x = -1;
+                        player_bullets[i].last_y = -1;
                         bullets_fired++;
                         break;
                     }
@@ -412,49 +405,64 @@ void update_player(void) {
         button2_debounce = 0;
     }
     
-    // Decrease debounce counters
     if (button1_debounce > 0) button1_debounce--;
     if (button2_debounce > 0) button2_debounce--;
     
-    // Draw player
-    draw_rect(player.x, player.y, PLAYER_SIZE, PLAYER_SIZE, BLUE);
+    // Draw player using hardware acceleration
+    draw_rect_ultra_fast(player.x, player.y, PLAYER_SIZE, PLAYER_SIZE, BLUE);
     
     prev_x = player.x;
     prev_y = player.y;
 }
 
-// 优化的子弹更新 - 批量处理
-void update_player_bullets_optimized(void) {
-    // 第一遍：更新位置和标记无效子弹
-    for (int i = 0; i < MAX_BULLETS; i++) {
-        if (!player_bullets[i].active) continue;
-        
-        // 清除旧位置
-        clear_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
-        
-        // 更新位置
-        player_bullets[i].x += player_bullets[i].dx * player_bullets[i].speed;
-        player_bullets[i].y += player_bullets[i].dy * player_bullets[i].speed;
-        
-        // 屏幕外检查
-        if (player_bullets[i].y < -10 || player_bullets[i].y > SCREEN_HEIGHT + 10 ||
-            player_bullets[i].x < -10 || player_bullets[i].x > SCREEN_WIDTH + 10) {
-            player_bullets[i].active = 0;
+// 极度优化的玩家子弹更新 - 使用批量绘制
+void update_player_bullets_ultra_optimized(void) {
+    static int skip_counter = 0;
+    skip_counter++;
+    
+    // 准备批量绘制数据
+    static u16 bullet_x[MAX_BULLETS], bullet_y[MAX_BULLETS], bullet_colors[MAX_BULLETS];
+    int active_bullet_count = 0;
+    
+    // 每2帧更新一次位置
+    if (skip_counter % 2 == 0) {
+        for (int i = 0; i < MAX_BULLETS; i++) {
+            if (player_bullets[i].active) {
+                // 添加旧位置到脏矩形
+                add_dirty_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
+                
+                // 更新位置
+                player_bullets[i].x += player_bullets[i].dx * player_bullets[i].speed;
+                player_bullets[i].y += player_bullets[i].dy * player_bullets[i].speed;
+                
+                // 边界检查
+                if (player_bullets[i].y < -5 || player_bullets[i].y > SCREEN_HEIGHT + 5 ||
+                    player_bullets[i].x < -5 || player_bullets[i].x > SCREEN_WIDTH + 5) {
+                    player_bullets[i].active = 0;
+                    continue;
+                }
+            }
         }
     }
     
-    // 第二遍：只绘制有效子弹
+    // 收集活跃子弹进行批量绘制
     for (int i = 0; i < MAX_BULLETS; i++) {
         if (player_bullets[i].active) {
-            u16 bullet_color = (player_bullets[i].dy == -1 && player_bullets[i].dx == 0) ? WHITE : CYAN;
-            draw_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE, bullet_color);
+            if (active_bullet_count < MAX_BULLETS) {
+                bullet_x[active_bullet_count] = player_bullets[i].x;
+                bullet_y[active_bullet_count] = player_bullets[i].y;
+                bullet_colors[active_bullet_count] = (player_bullets[i].dy == -1 && player_bullets[i].dx == 0) ? WHITE : CYAN;
+                active_bullet_count++;
+            }
         }
+    }
+    
+    // 批量绘制子弹 - 使用硬件加速
+    for (int i = 0; i < active_bullet_count; i++) {
+        draw_rect_ultra_fast(bullet_x[i], bullet_y[i], BULLET_SIZE, BULLET_SIZE, bullet_colors[i]);
     }
 }
 
-#define update_player_bullets update_player_bullets_optimized
-
-// Update enemies with movement and random spawning
 void update_enemies(void) {
     static int spawn_timer = 0;
     static int formation_timer = 0;
@@ -462,57 +470,52 @@ void update_enemies(void) {
     spawn_timer++;
     formation_timer++;
     
-    // Spawn individual enemies randomly
-    if (spawn_timer >= 30) {  // Every 0.5 seconds at 60 FPS
+    // 减少敌人生成频率
+    if (spawn_timer >= 80) {  // 每1.3秒生成一次
         spawn_timer = 0;
-        if (simple_rand() % 100 < 30) {  // 30% chance to spawn
+        if (simple_rand() % 100 < 20) {  // 20% 概率
             spawn_random_enemy();
         }
     }
     
-    // Spawn enemy formations occasionally
-    if (formation_timer >= 300) {  // Every 5 seconds
+    // 减少编队生成频率
+    if (formation_timer >= 800) {  // 每13秒
         formation_timer = 0;
-        if (simple_rand() % 100 < 20) {  // 20% chance to spawn formation
+        if (simple_rand() % 100 < 10) {  // 10% 概率
             spawn_enemy_formation();
         }
     }
     
-    // Update enemy positions
+    // 批量处理敌人位置更新
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (enemies[i].active) {
-            // Clear old position
-            clear_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE);
+            // 添加脏矩形
+            add_dirty_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE);
             
-            // Move enemy down
+            // 移动敌人
             enemies[i].y += enemies[i].speed;
             
-            // Remove enemy if it goes off screen
+            // 边界处理
             if (enemies[i].y > SCREEN_HEIGHT) {
-                enemies[i].speed = - enemies[i].speed;  // Reverse direction
-                enemies[i].y = SCREEN_HEIGHT;  // Reset to bottom
-                continue;
-            }
-
-            if (enemies[i].y < 0) {
-                enemies[i].speed = - enemies[i].speed;  // Reverse direction
-                enemies[i].y = 0;  // Reset to top
-                continue;
+                enemies[i].speed = -enemies[i].speed;
+                enemies[i].y = SCREEN_HEIGHT;
+            } else if (enemies[i].y < 0) {
+                enemies[i].speed = -enemies[i].speed;
+                enemies[i].y = 0;
             }
             
-            // Add some horizontal movement for variety
-            if (simple_rand() % 100 < 5) {  // 5% chance to change direction
-                int direction = (simple_rand() % 3) - 1;  // -1, 0, or 1
-                enemies[i].x += direction * 2;
+            // 减少横向移动频率
+            if (simple_rand() % 300 < 1) {  // 0.33% 概率
+                int direction = (simple_rand() % 3) - 1;
+                enemies[i].x += direction;
                 
-                // Keep enemies on screen
                 if (enemies[i].x < 0) enemies[i].x = 0;
                 if (enemies[i].x > SCREEN_WIDTH - ENEMY_SIZE) enemies[i].x = SCREEN_WIDTH - ENEMY_SIZE;
             }
         }
     }
     
-    // Draw enemies with different colors based on type
+    // 批量绘制敌人 - 使用硬件加速
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (enemies[i].active) {
             u16 enemy_color;
@@ -520,41 +523,41 @@ void update_enemies(void) {
                 case 0: enemy_color = RED; break;
                 case 1: enemy_color = MAGENTA; break;
                 case 2: enemy_color = YELLOW; break;
-                case 3: enemy_color = GREEN; break;  // 新增第四种类型
+                case 3: enemy_color = GREEN; break;
                 default: enemy_color = RED; break;
             }
-            draw_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE, enemy_color);
+            draw_rect_ultra_fast(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE, enemy_color);
         }
     }
 }
 
-// 优化的敌人子弹系统
-void update_enemy_bullets_optimized(void) {
-    // 计算当前子弹数量，控制最大数量
-    int active_enemy_bullets = 0;
+// 极度优化的敌人子弹系统 - 使用批量绘制和更激进的优化
+void update_enemy_bullets_ultra_optimized(void) {
+    static int update_skip = 0;
+    update_skip++;
+    
+    // 计算当前子弹数量
+    int active_count = 0;
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
-        if (enemy_bullets[i].active) active_enemy_bullets++;
+        if (enemy_bullets[i].active) active_count++;
     }
     
-    if (active_enemy_bullets < 10000) { // 限制敌人子弹数量
+    // 动态调整更新频率 - 更激进的优化
+    int skip_frames = (active_count > 150) ? 4 : (active_count > 75) ? 3 : 2;
+    
+    // 生成新子弹 - 大幅降低频率
+    if (active_count < 1000 && update_skip % 6 == 0) { // 每6帧检查一次
         for (int i = 0; i < MAX_ENEMIES; i++) {
             if (!enemies[i].active) continue;
             
             enemies[i].shoot_timer++;
             
-            int shoot_interval;
-            switch (enemies[i].type) {
-                case 0: shoot_interval = 120; break; // 降低射击频率
-                case 1: shoot_interval = 80; break;
-                case 2: shoot_interval = 160; break;
-                case 3: shoot_interval = 60; break;
-                default: shoot_interval = 120; break;
-            }
+            int shoot_interval = 300; // 大幅增加射击间隔
             
             if (enemies[i].shoot_timer >= shoot_interval) {
                 enemies[i].shoot_timer = 0;
                 
-                // 简化射击模式，减少计算
+                // 只发射一发子弹
                 for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
                     if (!enemy_bullets[j].active) {
                         enemy_bullets[j].x = enemies[i].x + ENEMY_SIZE / 2;
@@ -563,105 +566,102 @@ void update_enemy_bullets_optimized(void) {
                         enemy_bullets[j].speed = 2;
                         enemy_bullets[j].dx = 0;
                         enemy_bullets[j].dy = 1;
-                        break; // 只发射一发，简化
+                        enemy_bullets[j].last_x = -1;
+                        enemy_bullets[j].last_y = -1;
+                        break;
                     }
                 }
             }
         }
     }
     
-    // 批量更新敌人子弹（与玩家子弹类似的优化）
-    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
-        if (!enemy_bullets[i].active) continue;
-        
-        clear_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
-        
-        enemy_bullets[i].x += enemy_bullets[i].dx * enemy_bullets[i].speed;
-        enemy_bullets[i].y += enemy_bullets[i].dy * enemy_bullets[i].speed;
-        
-        if (enemy_bullets[i].y > SCREEN_HEIGHT + 10 || enemy_bullets[i].x < -10 || 
-            enemy_bullets[i].x > SCREEN_WIDTH + 10 || enemy_bullets[i].y < -10) {
-            enemy_bullets[i].active = 0;
+    // 更新子弹位置 - 使用跳帧
+    if (update_skip % skip_frames == 0) {
+        for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
+            if (!enemy_bullets[i].active) continue;
+            
+            add_dirty_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
+            
+            enemy_bullets[i].x += enemy_bullets[i].dx * enemy_bullets[i].speed;
+            enemy_bullets[i].y += enemy_bullets[i].dy * enemy_bullets[i].speed;
+            
+            if (enemy_bullets[i].y > SCREEN_HEIGHT + 5 || enemy_bullets[i].x < -5 || 
+                enemy_bullets[i].x > SCREEN_WIDTH + 5 || enemy_bullets[i].y < -5) {
+                enemy_bullets[i].active = 0;
+            }
         }
     }
     
-    // 批量绘制
+    // 批量绘制敌人子弹 - 使用硬件加速
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
         if (enemy_bullets[i].active) {
-            draw_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE, YELLOW);
+            draw_rect_ultra_fast(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE, YELLOW);
         }
     }
 }
 
-#define update_enemy_bullets update_enemy_bullets_optimized
-// 优化的碰撞检测 - 使用空间分割
-void check_collisions_optimized(void) {
-    // 只检查屏幕内的物体
-    for (int i = 0; i < MAX_BULLETS; i++) {
+// 优化的碰撞检测
+void check_collisions_ultra_optimized(void) {
+    collision_check_counter++;
+    
+    // 每4帧检查一次碰撞，进一步减少频率
+    if (collision_check_counter % 4 != 0) return;
+    
+    // 玩家子弹 vs 敌人 - 限制检查数量
+    int bullet_checks = 0;
+    for (int i = 0; i < MAX_BULLETS && bullet_checks < 50; i++) {
         if (!player_bullets[i].active) continue;
+        bullet_checks++;
         
-        // 屏幕外的子弹不参与碰撞检测
+        // 简单边界检查
         if (player_bullets[i].x < 0 || player_bullets[i].x > SCREEN_WIDTH ||
             player_bullets[i].y < 0 || player_bullets[i].y > SCREEN_HEIGHT) {
             continue;
         }
         
-        for (int j = 0; j < MAX_ENEMIES; j++) {
+        int enemy_checks = 0;
+        for (int j = 0; j < MAX_ENEMIES && enemy_checks < 20; j++) {
             if (!enemies[j].active) continue;
+            enemy_checks++;
             
-            // 快速距离检查 - 避免复杂计算
-            int dx = player_bullets[i].x - enemies[j].x;
-            int dy = player_bullets[i].y - enemies[j].y;
-            
-            // 使用平方距离避免sqrt
-            if (dx * dx + dy * dy < 25) { // 约5像素半径
-                // 精确碰撞检测
-                if (player_bullets[i].x >= enemies[j].x && 
-                    player_bullets[i].x < enemies[j].x + ENEMY_SIZE &&
-                    player_bullets[i].y >= enemies[j].y && 
-                    player_bullets[i].y < enemies[j].y + ENEMY_SIZE) {
-                    
-                    // 碰撞处理
-                    clear_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
-                    clear_rect(enemies[j].x, enemies[j].y, ENEMY_SIZE, ENEMY_SIZE);
-                    
-                    player_bullets[i].active = 0;
-                    enemies[j].active = 0;
-                    
-                    if (simple_rand() % 100 < 10) {
-                        spawn_random_enemy();
-                    }
-                    break; // 子弹已销毁，跳出内层循环
+            // 简化的碰撞检测
+            if (player_bullets[i].x < enemies[j].x + ENEMY_SIZE && 
+                player_bullets[i].x + BULLET_SIZE > enemies[j].x &&
+                player_bullets[i].y < enemies[j].y + ENEMY_SIZE && 
+                player_bullets[i].y + BULLET_SIZE > enemies[j].y) {
+                
+                add_dirty_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
+                add_dirty_rect(enemies[j].x, enemies[j].y, ENEMY_SIZE, ENEMY_SIZE);
+                
+                player_bullets[i].active = 0;
+                enemies[j].active = 0;
+                
+                // 大幅减少新敌人生成概率
+                if (simple_rand() % 100 < 3) {
+                    spawn_random_enemy();
                 }
+                break;
             }
         }
     }
     
-    // 敌人子弹碰撞检测（类似优化）
-    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
+    // 敌人子弹 vs 玩家 - 限制检查数量
+    int enemy_bullet_checks = 0;
+    for (int i = 0; i < MAX_ENEMY_BULLETS && enemy_bullet_checks < 30; i++) {
         if (!enemy_bullets[i].active) continue;
+        enemy_bullet_checks++;
         
-        // 与玩家的距离检查
-        int dx = enemy_bullets[i].x - player.x;
-        int dy = enemy_bullets[i].y - player.y;
-        
-        if (dx * dx + dy * dy < 16) { // 约4像素半径
-            if (enemy_bullets[i].x >= player.x && 
-                enemy_bullets[i].x < player.x + PLAYER_SIZE &&
-                enemy_bullets[i].y >= player.y && 
-                enemy_bullets[i].y < player.y + PLAYER_SIZE) {
-                
-                clear_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
-                enemy_bullets[i].active = 0;
-            }
+        if (enemy_bullets[i].x < player.x + PLAYER_SIZE && 
+            enemy_bullets[i].x + BULLET_SIZE > player.x &&
+            enemy_bullets[i].y < player.y + PLAYER_SIZE && 
+            enemy_bullets[i].y + BULLET_SIZE > player.y) {
+            
+            add_dirty_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
+            enemy_bullets[i].active = 0;
         }
     }
 }
 
-// 替换原函数
-#define check_collisions check_collisions_optimized
-
-// Count active bullets and enemies
 int count_active_objects(void) {
     int bullet_count = 0;
     int enemy_count = 0;
@@ -679,37 +679,53 @@ int count_active_objects(void) {
     return bullet_count + enemy_count;
 }
 
-// Main game loop
+// 优化的主游戏循环
 void game_loop(int difficulty) {
     init_game();
-    
-    // Clear screen
     LCD_Clear(BLACK);
     
-    while (1) {  // Infinite loop - no exit mechanism
-        // Increment frame counter
+    while (1) {
         frame_counter++;
+        performance_update_counter++;
         
-        // Update performance counters
-        update_fps_counter();
-        update_entity_counter();
+        // 减少性能计数器更新频率
+        if (performance_update_counter % 20 == 0) {
+            update_fps_counter();
+            update_entity_counter_optimized();
+        }
         
-        // Update game objects
+        // 清除脏矩形
+        clear_dirty_rects();
+        
+        // 更新游戏对象
         update_player();
-        
-        // Check collisions BEFORE updating bullets
-        check_collisions();
-        
-        // Then update bullets (this will clear inactive bullets properly)
-        update_player_bullets();
+        check_collisions_ultra_optimized();
+        update_player_bullets_ultra_optimized();
         update_enemies();
-        update_enemy_bullets();
+        update_enemy_bullets_ultra_optimized();
         
-        // Draw performance counters (at the end to avoid being overwritten)
-        draw_performance_counters();
+        // 减少性能显示更新频率
+        if (performance_update_counter % 40 == 0) {
+            draw_performance_counters();
+        }
         
-        // Frame rate control - maintain 60 FPS
-        delay_1ms(30); // Approximately 60 FPS
+        // 动态帧率控制 - 更激进的优化
+        int active_bullets = 0;
+        for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
+            if (enemy_bullets[i].active) active_bullets++;
+        }
+        
+        // 根据子弹数量调整延迟
+        int frame_delay;
+        if (active_bullets > 100) {
+            frame_delay = 25;  // ~40 FPS
+        } else if (active_bullets > 50) {
+            frame_delay = 22;  // ~45 FPS
+        } else {
+            frame_delay = 20;  // ~50 FPS
+        }
+        
+        delay_1ms(frame_delay);
     }
 }
 
