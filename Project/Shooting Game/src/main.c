@@ -10,8 +10,13 @@
 #define ENEMY_SIZE 3
 #define BULLET_SIZE 2
 #define MAX_BULLETS 300         // 增加到300个玩家子弹
-#define MAX_ENEMY_BULLETS 500   // 增加到300个敌人子弹
+#define MAX_ENEMY_BULLETS 300   // 增加到300个敌人子弹
 #define MAX_ENEMIES 200         
+
+// 追踪子弹相关常量
+#define MAX_TRACKING_BULLETS 50    // 追踪子弹最大数量
+#define TRACKING_BULLET_SIZE 4     // 追踪子弹尺寸（正方形）
+#define TRACKING_BULLET_SPEED 2    // 追踪子弹速度
 
 // FPS and entity counting constants
 #define FPS_SAMPLE_FRAMES 8     // Sample over 8 frames (0.133s at 60fps)
@@ -40,12 +45,20 @@ typedef struct {
     int type;  // 新增：敌人类型
 } Enemy;
 
+// 追踪子弹结构体
+typedef struct {
+    int x, y;
+    int active;
+    int target_enemy_index;  // 追踪的敌人索引
+    int lifetime;           // 子弹生存时间
+} TrackingBullet;
+
 // Game state
 Player player;
 Bullet player_bullets[MAX_BULLETS];
 Bullet enemy_bullets[MAX_ENEMY_BULLETS];
 Enemy enemies[MAX_ENEMIES];
-
+TrackingBullet tracking_bullets[MAX_TRACKING_BULLETS];
 
 // Random number generator state
 static unsigned int rand_seed = 12345;
@@ -71,11 +84,6 @@ int simple_rand(void) {
     return (rand_seed / 65536) % 32768;
 }
 
-
-
-
-
-
 // 添加这些变量到性能计数器部分
 // Performance counters
 static unsigned long frame_times[FPS_SAMPLE_FRAMES];
@@ -91,8 +99,6 @@ static int last_displayed_entities = -1;
 // 添加真实时间测量变量
 static uint64_t fps_measurement_start_time = 0;
 static uint32_t fps_frame_count = 0;
-
-// ...existing code...
 
 // 真实FPS计数器 - 使用get_timer_value()测量
 void update_fps_counter(void) {
@@ -165,6 +171,9 @@ int count_active_entities(void) {
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
         if (enemy_bullets[i].active) count++;
     }
+    for (int i = 0; i < MAX_TRACKING_BULLETS; i++) {
+        if (tracking_bullets[i].active) count++;
+    }
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (enemies[i].active) count++;
     }
@@ -226,10 +235,49 @@ void safe_draw_pixel(int x, int y, u16 color) {
     }
 }
 
-
 // Clear a rectangle (erase)
 void clear_rect(int x, int y, int width, int height) {
     draw_rect(x, y, width, height, BLACK);
+}
+
+// 寻找最近敌人的函数
+int find_nearest_enemy(int x, int y) {
+    int nearest_index = -1;
+    int min_distance_squared = 999999;
+    
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        if (enemies[i].active) {
+            int dx = enemies[i].x - x;
+            int dy = enemies[i].y - y;
+            int distance_squared = dx * dx + dy * dy;
+            
+            if (distance_squared < min_distance_squared) {
+                min_distance_squared = distance_squared;
+                nearest_index = i;
+            }
+        }
+    }
+    
+    return nearest_index;
+}
+
+// 发射追踪子弹的函数
+void fire_tracking_bullet(void) {
+    // 寻找最近的敌人
+    int target_index = find_nearest_enemy(player.x, player.y);
+    if (target_index == -1) return; // 没有敌人可追踪
+    
+    // 寻找空闲的追踪子弹槽
+    for (int i = 0; i < MAX_TRACKING_BULLETS; i++) {
+        if (!tracking_bullets[i].active) {
+            tracking_bullets[i].x = player.x + PLAYER_SIZE / 2 - TRACKING_BULLET_SIZE / 2;
+            tracking_bullets[i].y = player.y;
+            tracking_bullets[i].active = 1;
+            tracking_bullets[i].target_enemy_index = target_index;
+            tracking_bullets[i].lifetime = 300; // 5秒生存时间（60FPS）
+            break;
+        }
+    }
 }
 
 // Initialize game objects 
@@ -249,6 +297,13 @@ void init_game(void) {
         enemy_bullets[i].active = 0;
         enemy_bullets[i].dx = 0;
         enemy_bullets[i].dy = 0;
+    }
+    
+    // Initialize tracking bullets
+    for (int i = 0; i < MAX_TRACKING_BULLETS; i++) {
+        tracking_bullets[i].active = 0;
+        tracking_bullets[i].target_enemy_index = -1;
+        tracking_bullets[i].lifetime = 0;
     }
     
     // Initialize enemies - 初始生成一些敌人
@@ -313,6 +368,7 @@ void update_player(void) {
     // 添加静态变量来防抖动
     static int button1_debounce = 0;
     static int button2_debounce = 0;
+    static int center_button_debounce = 0;  // 新增center键防抖动
     static int debounce_counter = 0;
     
     // 防抖动计数器
@@ -412,9 +468,23 @@ void update_player(void) {
         button2_debounce = 0;
     }
     
+    // Handle CENTER button - 追踪子弹
+    if (Get_Button(JOY_CTR)) {
+        if (center_button_debounce == 0) {
+            center_button_debounce = 30;  // 30帧防抖动，避免过于频繁发射
+            debounce_counter = 5;
+            
+            // 发射追踪子弹
+            fire_tracking_bullet();
+        }
+    } else {
+        center_button_debounce = 0;
+    }
+    
     // Decrease debounce counters
     if (button1_debounce > 0) button1_debounce--;
     if (button2_debounce > 0) button2_debounce--;
+    if (center_button_debounce > 0) center_button_debounce--;
     
     // Draw player
     draw_rect(player.x, player.y, PLAYER_SIZE, PLAYER_SIZE, BLUE);
@@ -453,6 +523,76 @@ void update_player_bullets_optimized(void) {
 }
 
 #define update_player_bullets update_player_bullets_optimized
+
+// 更新追踪子弹的函数
+void update_tracking_bullets(void) {
+    for (int i = 0; i < MAX_TRACKING_BULLETS; i++) {
+        if (!tracking_bullets[i].active) continue;
+        
+        // 清除旧位置
+        LCD_DrawRectangle(tracking_bullets[i].x, tracking_bullets[i].y, 
+                         tracking_bullets[i].x + TRACKING_BULLET_SIZE - 1, 
+                         tracking_bullets[i].y + TRACKING_BULLET_SIZE - 1, BLACK);
+        
+        // 减少生存时间
+        tracking_bullets[i].lifetime--;
+        if (tracking_bullets[i].lifetime <= 0) {
+            tracking_bullets[i].active = 0;
+            continue;
+        }
+        
+        // 检查目标敌人是否还存在
+        int target_index = tracking_bullets[i].target_enemy_index;
+        if (target_index < 0 || target_index >= MAX_ENEMIES || !enemies[target_index].active) {
+            // 重新寻找最近的敌人
+            target_index = find_nearest_enemy(tracking_bullets[i].x, tracking_bullets[i].y);
+            tracking_bullets[i].target_enemy_index = target_index;
+            
+            if (target_index == -1) {
+                // 没有敌人可追踪，子弹向上飞行
+                tracking_bullets[i].y -= TRACKING_BULLET_SPEED;
+            }
+        }
+        
+        if (target_index >= 0) {
+            // 计算朝向目标的方向
+            int target_x = enemies[target_index].x + ENEMY_SIZE / 2;
+            int target_y = enemies[target_index].y + ENEMY_SIZE / 2;
+            
+            int dx = target_x - tracking_bullets[i].x;
+            int dy = target_y - tracking_bullets[i].y;
+            
+            // 简单的追踪算法：朝目标方向移动
+            if (dx != 0 || dy != 0) {
+                // 计算移动方向（简化版本，不使用浮点数）
+                int move_x = 0, move_y = 0;
+                
+                if (dx > TRACKING_BULLET_SPEED) move_x = TRACKING_BULLET_SPEED;
+                else if (dx < -TRACKING_BULLET_SPEED) move_x = -TRACKING_BULLET_SPEED;
+                else move_x = dx;
+                
+                if (dy > TRACKING_BULLET_SPEED) move_y = TRACKING_BULLET_SPEED;
+                else if (dy < -TRACKING_BULLET_SPEED) move_y = -TRACKING_BULLET_SPEED;
+                else move_y = dy;
+                
+                tracking_bullets[i].x += move_x;
+                tracking_bullets[i].y += move_y;
+            }
+        }
+        
+        // 屏幕边界检查
+        if (tracking_bullets[i].x < 0 || tracking_bullets[i].x > SCREEN_WIDTH - TRACKING_BULLET_SIZE ||
+            tracking_bullets[i].y < 0 || tracking_bullets[i].y > SCREEN_HEIGHT - TRACKING_BULLET_SIZE) {
+            tracking_bullets[i].active = 0;
+            continue;
+        }
+        
+        // 绘制追踪子弹（正方形边框，用绿色表示追踪子弹）
+        LCD_DrawRectangle(tracking_bullets[i].x, tracking_bullets[i].y, 
+                         tracking_bullets[i].x + TRACKING_BULLET_SIZE - 1, 
+                         tracking_bullets[i].y + TRACKING_BULLET_SIZE - 1, GREEN);
+    }
+}
 
 // Update enemies with movement and random spawning
 void update_enemies(void) {
@@ -594,6 +734,7 @@ void update_enemy_bullets_optimized(void) {
 }
 
 #define update_enemy_bullets update_enemy_bullets_optimized
+
 // 优化的碰撞检测 - 使用空间分割
 void check_collisions_optimized(void) {
     // 只检查屏幕内的物体
@@ -637,6 +778,43 @@ void check_collisions_optimized(void) {
         }
     }
     
+    // 追踪子弹与敌人的碰撞检测
+    for (int i = 0; i < MAX_TRACKING_BULLETS; i++) {
+        if (!tracking_bullets[i].active) continue;
+        
+        for (int j = 0; j < MAX_ENEMIES; j++) {
+            if (!enemies[j].active) continue;
+            
+            // 快速距离检查
+            int dx = tracking_bullets[i].x + TRACKING_BULLET_SIZE/2 - (enemies[j].x + ENEMY_SIZE/2);
+            int dy = tracking_bullets[i].y + TRACKING_BULLET_SIZE/2 - (enemies[j].y + ENEMY_SIZE/2);
+            
+            if (dx * dx + dy * dy < 36) { // 约6像素半径
+                // 精确碰撞检测
+                if (tracking_bullets[i].x < enemies[j].x + ENEMY_SIZE &&
+                    tracking_bullets[i].x + TRACKING_BULLET_SIZE > enemies[j].x &&
+                    tracking_bullets[i].y < enemies[j].y + ENEMY_SIZE &&
+                    tracking_bullets[i].y + TRACKING_BULLET_SIZE > enemies[j].y) {
+                    
+                    // 碰撞处理
+                    LCD_DrawRectangle(tracking_bullets[i].x, tracking_bullets[i].y, 
+                                     tracking_bullets[i].x + TRACKING_BULLET_SIZE - 1, 
+                                     tracking_bullets[i].y + TRACKING_BULLET_SIZE - 1, BLACK);
+                    clear_rect(enemies[j].x, enemies[j].y, ENEMY_SIZE, ENEMY_SIZE);
+                    
+                    tracking_bullets[i].active = 0;
+                    enemies[j].active = 0;
+                    
+                    // 随机生成新敌人
+                    if (simple_rand() % 100 < 15) {
+                        spawn_random_enemy();
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    
     // 敌人子弹碰撞检测（类似优化）
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
         if (!enemy_bullets[i].active) continue;
@@ -672,6 +850,9 @@ int count_active_objects(void) {
     for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
         if (enemy_bullets[i].active) bullet_count++;
     }
+    for (int i = 0; i < MAX_TRACKING_BULLETS; i++) {
+        if (tracking_bullets[i].active) bullet_count++;
+    }
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (enemies[i].active) enemy_count++;
     }
@@ -702,6 +883,7 @@ void game_loop(int difficulty) {
         
         // Then update bullets (this will clear inactive bullets properly)
         update_player_bullets();
+        update_tracking_bullets();  // 新增：更新追踪子弹
         update_enemies();
         update_enemy_bullets();
         
