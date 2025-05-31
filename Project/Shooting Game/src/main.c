@@ -3,23 +3,30 @@
 #include "assembly/example.h"
 #include "assembly/select.h"
 
-// Game constants - 大幅增加数量
+// Game constants
 #define SCREEN_WIDTH 120
 #define SCREEN_HEIGHT 80
+// OPTIMIZATION: Adjusted entity sizes, especially bullets
 #define PLAYER_SIZE 6
-#define ENEMY_SIZE 8
-#define BULLET_SIZE 4
-#define MAX_BULLETS 300         // 增加到300个玩家子弹
-#define MAX_ENEMY_BULLETS 300   // 增加到300个敌人子弹
+#define ENEMY_SIZE 4
+#define BULLET_SIZE 2         // OPTIMIZATION: Smaller bullets (2x2)
+#define MAX_BULLETS 300
+#define MAX_ENEMY_BULLETS 300
 #define MAX_ENEMIES 100
-// 追踪子弹相关常量
-#define MAX_TRACKING_BULLETS 50    // 追踪子弹最大数量
-#define TRACKING_BULLET_SIZE 4     // 追踪子弹尺寸（正方形）
-#define TRACKING_BULLET_SPEED 2    // 追踪子弹速度
 
-// FPS and entity counting constants
-#define FPS_SAMPLE_FRAMES 8     // Sample over 8 frames (0.133s at 60fps)
-#define ENTITY_UPDATE_INTERVAL 3  // Update entity counter every 4 frames
+// Tracking bullets
+#define MAX_TRACKING_BULLETS 50
+#define TRACKING_BULLET_SIZE 3    // OPTIMIZATION: Can be 2x2 or 3x3 for visibility
+#define TRACKING_BULLET_SPEED 2
+
+// Entity shapes
+#define SHAPE_HOLLOW_CIRCLE 0
+#define SHAPE_HOLLOW_SQUARE 1
+#define SHAPE_SOLID_SQUARE 2
+
+// FPS and entity counting
+#define FPS_SAMPLE_FRAMES 8
+#define ENTITY_UPDATE_INTERVAL 1 // Update entity counter every frame now that it's cheap
 
 // Player structure
 typedef struct {
@@ -32,7 +39,8 @@ typedef struct {
     int x, y;
     int active;
     int speed;
-    int dx, dy;  // Direction vectors
+    int dx, dy;
+    int shape; // Kept for flexibility, though player bullets might always be solid
 } Bullet;
 
 // Enemy structure
@@ -41,869 +49,675 @@ typedef struct {
     int active;
     int speed;
     int shoot_timer;
-    int type;  // 新增：敌人类型
+    int type;
+    int shape;
 } Enemy;
 
-// 追踪子弹结构体
+// Tracking Bullet structure
 typedef struct {
     int x, y;
     int active;
-    int target_enemy_index;  // 追踪的敌人索引
-    int lifetime;           // 子弹生存时间
+    int target_enemy_index; // Stores the actual index in the main enemies array
+    int lifetime;
 } TrackingBullet;
 
 // Game state
 Player player;
+
 Bullet player_bullets[MAX_BULLETS];
 Bullet enemy_bullets[MAX_ENEMY_BULLETS];
 Enemy enemies[MAX_ENEMIES];
 TrackingBullet tracking_bullets[MAX_TRACKING_BULLETS];
 
+// OPTIMIZATION: Active list management
+int active_player_bullet_indices[MAX_BULLETS];
+int num_active_player_bullets = 0;
+
+int active_enemy_bullet_indices[MAX_ENEMY_BULLETS];
+int num_active_enemy_bullets = 0;
+
+int active_enemy_indices[MAX_ENEMIES];
+int num_active_enemies = 0;
+
+int active_tracking_bullet_indices[MAX_TRACKING_BULLETS];
+int num_active_tracking_bullets = 0;
+
+
 // Random number generator state
 static unsigned int rand_seed = 12345;
+
+// Performance counters
+static unsigned long frame_times[FPS_SAMPLE_FRAMES]; // Original FPS calculation, might be superseded by new one
+static int frame_index = 0;                         // Original FPS calculation
+static int displayed_fps = 60;
+static int displayed_entities = 0;
+static int entity_update_counter = 0;
+static unsigned long frame_counter = 0;
+static int last_displayed_fps = -1;
+static int last_displayed_entities = -1;
+static uint64_t fps_measurement_start_time = 0;
+static uint32_t fps_frame_count = 0;
+
 
 void Inp_init(void) {
   rcu_periph_clock_enable(RCU_GPIOA);
   rcu_periph_clock_enable(RCU_GPIOC);
-
-  gpio_init(GPIOA, GPIO_MODE_IPD, GPIO_OSPEED_50MHZ,
-            GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3);
-  gpio_init(GPIOC, GPIO_MODE_IPD, GPIO_OSPEED_50MHZ,
-            GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15);
+  gpio_init(GPIOA, GPIO_MODE_IPD, GPIO_OSPEED_50MHZ, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3);
+  gpio_init(GPIOC, GPIO_MODE_IPD, GPIO_OSPEED_50MHZ, GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15);
 }
 
 void IO_init(void) {
-  Inp_init(); // inport init
+  Inp_init();
   Lcd_Init(); // LCD init
+  // IMPORTANT: Assumes Lcd_Init() sets up LCD_W and LCD_H correctly if used by LCD_Clear.
+  // IMPORTANT: Assumes LCD_Clear in lcd.c is now optimized to use LCD_Fill.
 }
 
-// Simple random number generator
 int simple_rand(void) {
     rand_seed = rand_seed * 1103515245 + 12345;
     return (rand_seed / 65536) % 32768;
 }
 
-// 添加这些变量到性能计数器部分
-// Performance counters
-static unsigned long frame_times[FPS_SAMPLE_FRAMES];
-static int frame_index = 0;
-static int displayed_fps = 60;
-static int displayed_entities = 0;
-static int entity_update_counter = 0;
-static unsigned long frame_counter = 0;
-// 添加这些变量来避免频闪
-static int last_displayed_fps = -1;
-static int last_displayed_entities = -1;
+// OPTIMIZATION: Uses LCD_Fill for speed.
+void draw_rect_optimized(int x, int y, int width, int height, u16 color) {
+    int x0 = x;
+    int y0 = y;
+    int x1 = x + width - 1;  // LCD_Fill uses inclusive coordinates
+    int y1 = y + height - 1;
 
-// 添加真实时间测量变量
-static uint64_t fps_measurement_start_time = 0;
-static uint32_t fps_frame_count = 0;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 >= SCREEN_WIDTH) x1 = SCREEN_WIDTH - 1;
+    if (y1 >= SCREEN_HEIGHT) y1 = SCREEN_HEIGHT - 1;
 
-// 真实FPS计数器 - 使用get_timer_value()测量
+    if (x0 > x1 || y0 > y1) return;
+    LCD_Fill(x0, y0, x1, y1, color);
+}
+
+void clear_rect(int x, int y, int width, int height) {
+    draw_rect_optimized(x, y, width, height, BLACK);
+}
+
+// OPTIMIZATION: Helper for drawing hollow rectangles efficiently using LCD_Fill
+static void LCD_DrawHollowRect(u16 x1, u16 y1, u16 x2, u16 y2, u16 color) {
+    // Ensure x1<=x2 and y1<=y2
+    if (x1 > x2) { u16 temp = x1; x1 = x2; x2 = temp; }
+    if (y1 > y2) { u16 temp = y1; y1 = y2; y2 = temp; }
+
+    LCD_Fill(x1, y1, x2, y1, color); // Top line
+    LCD_Fill(x1, y2, x2, y2, color); // Bottom line
+    if (y1 + 1 <= y2 -1) { // Avoid overdraw if height is too small
+        LCD_Fill(x1, y1 + 1, x1, y2 - 1, color); // Left line
+        LCD_Fill(x2, y1 + 1, x2, y2 - 1, color); // Right line
+    }
+}
+
+void clear_shape(int x, int y, int size, int shape) {
+    switch(shape) {
+        case SHAPE_HOLLOW_CIRCLE:
+            LCD_DrawCircle(x + size/2, y + size/2, size/2, BLACK); // Slow, consider alternatives if bottleneck
+            break;
+        case SHAPE_HOLLOW_SQUARE:
+            LCD_DrawHollowRect(x, y, x + size - 1, y + size - 1, BLACK);
+            break;
+        case SHAPE_SOLID_SQUARE:
+            draw_rect_optimized(x, y, size, size, BLACK); // Fast
+            break;
+    }
+}
+
+void draw_shape(int x, int y, int size, int shape, u16 color) {
+    switch(shape) {
+        case SHAPE_HOLLOW_CIRCLE:
+            LCD_DrawCircle(x + size/2, y + size/2, size/2, color); // Slow, consider alternatives if bottleneck
+            break;
+        case SHAPE_HOLLOW_SQUARE:
+            LCD_DrawHollowRect(x, y, x + size - 1, y + size - 1, color);
+            break;
+        case SHAPE_SOLID_SQUARE:
+            draw_rect_optimized(x, y, size, size, color); // Fast
+            break;
+    }
+}
+
 void update_fps_counter(void) {
-    
-    // 获取当前真实时间
     uint64_t current_time = get_timer_value();
-    
-    // 增加帧计数
     fps_frame_count++;
-    
-    // 如果这是第一次测量，记录开始时间
     if (fps_measurement_start_time == 0) {
         fps_measurement_start_time = current_time;
         fps_frame_count = 0;
         return;
     }
-    
-    // 每30帧更新一次FPS显示（约0.5秒）
-    if (fps_frame_count >= 6) {
+    if (fps_frame_count >= 30) { // Update display about every 0.5s at 60fps
         uint64_t elapsed_time = current_time - fps_measurement_start_time;
-        
         if (elapsed_time > 0) {
-            // 计算真实FPS
-            // elapsed_time 的单位是定时器滴答
-            // SystemCoreClock/4 是每秒的滴答数（根据你的delay_1ms实现）
-            uint64_t ticks_per_second = SystemCoreClock / 4;
-            
-            // FPS = 帧数 / 秒数 = 帧数 / (elapsed_ticks / ticks_per_second)
+            uint64_t ticks_per_second = SystemCoreClock / 4; // Assuming SysTick based timer
             displayed_fps = (fps_frame_count * ticks_per_second) / elapsed_time;
-            
-            // 限制显示范围
             if (displayed_fps > 99) displayed_fps = 99;
-            if (displayed_fps < 1) displayed_fps = 1;
+            if (displayed_fps < 0) displayed_fps = 0; // Can be 0 if stalls
         }
-        
-        // 重置测量
         fps_measurement_start_time = current_time;
         fps_frame_count = 0;
     }
 }
 
-// 优化的绘制函数 - 减少像素操作
-void draw_rect(int x, int y, int width, int height, u16 color) {
-    // 边界检查一次，而不是每个像素都检查
-    int start_x = (x < 0) ? 0 : x;
-    int start_y = (y < 0) ? 0 : y;
-    int end_x = (x + width > SCREEN_WIDTH) ? SCREEN_WIDTH : x + width;
-    int end_y = (y + height > SCREEN_HEIGHT) ? SCREEN_HEIGHT : y + height;
-    
-    // 如果完全在屏幕外，直接返回
-    if (start_x >= end_x || start_y >= end_y) return;
-    
-    // 批量绘制，减少函数调用
-    for (int j = start_y; j < end_y; j++) {
-        for (int i = start_x; i < end_x; i++) {
-            LCD_DrawPoint(i, j, color);
-        }
-    }
+// OPTIMIZATION: Uses num_active_X counters
+int count_active_entities_quick(void) {
+    return 1 + num_active_player_bullets + num_active_enemy_bullets + num_active_tracking_bullets + num_active_enemies;
 }
 
-int count_active_entities(void) {
-    int count = 1; // Player counts as 1
-    
-    for (int i = 0; i < MAX_BULLETS; i++) {
-        if (player_bullets[i].active) count++;
-    }
-    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
-        if (enemy_bullets[i].active) count++;
-    }
-    for (int i = 0; i < MAX_TRACKING_BULLETS; i++) {
-        if (tracking_bullets[i].active) count++;
-    }
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        if (enemies[i].active) count++;
-    }
-    
-    return count;
-}
-
-// 减少计数器更新频率
 void update_entity_counter_optimized(void) {
     entity_update_counter++;
-    if (entity_update_counter >= 10) {  // 每20帧更新一次
+    if (entity_update_counter >= ENTITY_UPDATE_INTERVAL) {
         entity_update_counter = 0;
-        displayed_entities = count_active_entities();
+        displayed_entities = count_active_entities_quick();
         if (displayed_entities > 999) displayed_entities = 999;
     }
 }
 
-#define update_entity_counter update_entity_counter_optimized
-
-int count_fps = 0;
-// 修改绘制函数 - 只在数值变化时重绘
 void draw_performance_counters(void) {
-    // 只在FPS变化时重绘FPS区域
-
-    if (displayed_fps != last_displayed_fps && count_fps % 10 == 0) { 
-        // 清除FPS区域
-        count_fps = 0;
-        for (int x = SCREEN_WIDTH + 5; x < SCREEN_WIDTH; x++)
-        {
-            for (int y = 0; y < 25; y++) {
-                LCD_DrawPoint(x, y, BLACK);
-            }
-        }
-
-        // 重绘FPS
+    if (displayed_fps != last_displayed_fps) {
+        clear_rect(SCREEN_WIDTH + 5, 0, 35, 25); // Area for FPS
         LCD_ShowString(SCREEN_WIDTH + 5 , 5, (u8*)"FPS", WHITE);
         LCD_ShowNum(SCREEN_WIDTH + 5, 20, displayed_fps, 2, WHITE);
-        
         last_displayed_fps = displayed_fps;
-    } else if (displayed_fps != last_displayed_fps) {
-        count_fps++;
     }
-    
-    // 只在实体数变化时重绘实体区域
     if (displayed_entities != last_displayed_entities) {
-        // 清除实体区域
-        for (int x = SCREEN_WIDTH + 5; x < SCREEN_WIDTH; x++) {
-            for (int y = 25; y < 55; y++) {
-                LCD_DrawPoint(x, y, BLACK);
-            }
-        }
-        
-        // 重绘实体计数
+        clear_rect(SCREEN_WIDTH + 5, 25, 35, 25); // Area for Entities
         LCD_ShowString(SCREEN_WIDTH + 5, 35, (u8*)"ENT", WHITE);
         LCD_ShowNum(SCREEN_WIDTH +5 , 50, displayed_entities, 3, WHITE);
-        
         last_displayed_entities = displayed_entities;
     }
 }
 
-// Safe LCD drawing function with bounds checking
-void safe_draw_pixel(int x, int y, u16 color) {
-    if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT) {
-        LCD_DrawPoint(x, y, color);
-    }
-}
-
-// Clear a rectangle (erase)
-void clear_rect(int x, int y, int width, int height) {
-    draw_rect(x, y, width, height, BLACK);
-}
-
-// 寻找最近敌人的函数
 int find_nearest_enemy(int x, int y) {
-    int nearest_index = -1;
-    int min_distance_squared = 999999;
-    
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        if (enemies[i].active) {
-            int dx = enemies[i].x - x;
-            int dy = enemies[i].y - y;
-            int distance_squared = dx * dx + dy * dy;
-            
-            if (distance_squared < min_distance_squared) {
-                min_distance_squared = distance_squared;
-                nearest_index = i;
-            }
+    int nearest_global_idx = -1;
+    int min_distance_squared = 9999999;
+
+    for (int i = 0; i < num_active_enemies; i++) {
+        int enemy_idx = active_enemy_indices[i];
+        // enemies[enemy_idx] is the active enemy
+        int dx = enemies[enemy_idx].x - x;
+        int dy = enemies[enemy_idx].y - y;
+        int distance_squared = dx * dx + dy * dy;
+        if (distance_squared < min_distance_squared) {
+            min_distance_squared = distance_squared;
+            nearest_global_idx = enemy_idx; // Store the index from the main enemies array
         }
     }
-    
-    return nearest_index;
+    return nearest_global_idx;
 }
 
-// 发射追踪子弹的函数
 void fire_tracking_bullet(void) {
-    // 寻找最近的敌人
-    int target_index = find_nearest_enemy(player.x, player.y);
-    if (target_index == -1) return; // 没有敌人可追踪
-    
-    // 寻找空闲的追踪子弹槽
+    int target_idx = find_nearest_enemy(player.x, player.y);
+    if (target_idx == -1 || num_active_tracking_bullets >= MAX_TRACKING_BULLETS) return;
+
     for (int i = 0; i < MAX_TRACKING_BULLETS; i++) {
         if (!tracking_bullets[i].active) {
             tracking_bullets[i].x = player.x + PLAYER_SIZE / 2 - TRACKING_BULLET_SIZE / 2;
             tracking_bullets[i].y = player.y;
             tracking_bullets[i].active = 1;
-            tracking_bullets[i].target_enemy_index = target_index;
-            tracking_bullets[i].lifetime = 300; // 5秒生存时间（60FPS）
+            tracking_bullets[i].target_enemy_index = target_idx;
+            tracking_bullets[i].lifetime = 300; // ~5 seconds at 60FPS
+
+            active_tracking_bullet_indices[num_active_tracking_bullets++] = i;
             break;
         }
     }
 }
 
-// Initialize game objects 
-void init_game(void) {
-    // Initialize player
-    player.x = SCREEN_WIDTH / 2;
-    player.y = SCREEN_HEIGHT - 20;
-    player.speed = 2;
-    
-    // Initialize bullets
-    for (int i = 0; i < MAX_BULLETS; i++) {
-        player_bullets[i].active = 0;
-        player_bullets[i].dx = 0;
-        player_bullets[i].dy = 0;
-    }
-    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
-        enemy_bullets[i].active = 0;
-        enemy_bullets[i].dx = 0;
-        enemy_bullets[i].dy = 0;
-    }
-    
-    // Initialize tracking bullets
-    for (int i = 0; i < MAX_TRACKING_BULLETS; i++) {
-        tracking_bullets[i].active = 0;
-        tracking_bullets[i].target_enemy_index = -1;
-        tracking_bullets[i].lifetime = 0;
-    }
-    
-    // Initialize enemies - 初始生成一些敌人
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        enemies[i].active = 0;  // 开始时都不活跃，随机生成
-    }
-    
-    // 生成初始敌人
-    for (int i = 0; i < 10; i++) {  // 初始生成10个敌人
-        spawn_random_enemy();
-    }
-    
-    // Initialize performance counters
-    for (int i = 0; i < FPS_SAMPLE_FRAMES; i++) {
-        frame_times[i] = 1; // Assume 16ms initially
-    }
-    frame_counter = 0;
-}
-
-// Spawn a random enemy
 void spawn_random_enemy(void) {
-    // Find an inactive enemy slot
+    if (num_active_enemies >= MAX_ENEMIES) return;
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (!enemies[i].active) {
-            // Random spawn position at top of screen
             enemies[i].x = simple_rand() % (SCREEN_WIDTH - ENEMY_SIZE);
-            enemies[i].y = (simple_rand() % 20 + 5);  // Spawn above screen
+            enemies[i].y = -(simple_rand() % 20 + 5); // Spawn above screen
             enemies[i].active = 1;
-            enemies[i].speed = -1 + simple_rand() % 3;  // Random speed 1-3
-            enemies[i].shoot_timer = simple_rand() % 60 + 20;  // Random initial timer
-            enemies[i].type = simple_rand() % 4;  // 四种类型的敌人 (0-3)
+            enemies[i].speed = 1 + simple_rand() % 2; // Speed 1-2
+            enemies[i].shoot_timer = simple_rand() % 60 + 30;
+            enemies[i].type = simple_rand() % 3;
+            enemies[i].shape = simple_rand() % 3;
+            
+            active_enemy_indices[num_active_enemies++] = i;
             break;
         }
     }
 }
 
-// Spawn enemy formation
-void spawn_enemy_formation(void) {
-    // Spawn a formation of 3-5 enemies
-    int formation_size = 10 + simple_rand() % 3;  // 3-5 enemies
-    int start_x = simple_rand() % (SCREEN_WIDTH - formation_size * 25);
+void init_game(void) {
+    player.x = SCREEN_WIDTH / 2;
+    player.y = SCREEN_HEIGHT - PLAYER_SIZE - 2; // Ensure player is fully on screen
+    player.speed = 2;
+
+    num_active_player_bullets = 0;
+    for (int i = 0; i < MAX_BULLETS; i++) player_bullets[i].active = 0;
+
+    num_active_enemy_bullets = 0;
+    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) enemy_bullets[i].active = 0;
     
-    for (int i = 0; i < formation_size; i++) {
-        for (int j = 0; j < MAX_ENEMIES; j++) {
-            if (!enemies[j].active) {
-                enemies[j].x = start_x + i * 25;
-                enemies[j].y = -(simple_rand() % 15 + 5);
-                enemies[j].active = 1;
-                enemies[j].speed = 1;
-                enemies[j].shoot_timer = simple_rand() % 40;
-                enemies[j].type = simple_rand() % 4;
-                break;
-            }
-        }
+    num_active_tracking_bullets = 0;
+    for (int i = 0; i < MAX_TRACKING_BULLETS; i++) tracking_bullets[i].active = 0;
+
+    num_active_enemies = 0;
+    for (int i = 0; i < MAX_ENEMIES; i++) enemies[i].active = 0;
+
+    for (int i = 0; i < 10; i++) spawn_random_enemy();
+
+    frame_counter = 0;
+    fps_measurement_start_time = 0; // Reset FPS counter
+    fps_frame_count = 0;
+}
+
+void spawn_enemy_formation(void) {
+    // Simplified: just spawn a few random enemies
+    for (int i = 0; i < 3 + simple_rand() % 3; i++) {
+        spawn_random_enemy();
     }
 }
 
-// Handle player input and movement
 void update_player(void) {
     static int prev_x = -1, prev_y = -1;
-    
-    // 添加静态变量来防抖动
     static int button1_debounce = 0;
     static int button2_debounce = 0;
-    static int center_button_debounce = 0;  // 新增center键防抖动
-    static int debounce_counter = 0;
-    
-    // 防抖动计数器
-    if (debounce_counter > 0) {
-        debounce_counter--;
-    }
-    
-    // Clear previous player position
-    if (prev_x >= 0 && prev_y >= 0) {
-        clear_rect(prev_x, prev_y, PLAYER_SIZE, PLAYER_SIZE);
-    }
-    
-    // Handle movement - 只在没有防抖动时检查移动
-    if (debounce_counter == 0) {
-        if (Get_Button(JOY_LEFT) && player.x > 0) {
-            player.x -= player.speed;
-        }
-        if (Get_Button(JOY_RIGHT) && player.x < SCREEN_WIDTH - PLAYER_SIZE) {
-            player.x += player.speed;
-        }
-        if (Get_Button(JOY_UP) && player.y > 0) {
-            player.y -= player.speed;
-        }
-        if (Get_Button(JOY_DOWN) && player.y < SCREEN_HEIGHT - PLAYER_SIZE) {
-            player.y += player.speed;
-        }
-    }
+    static int center_button_debounce = 0;
+    // Note: The original debounce_counter for all inputs might be too restrictive.
+    // Consider removing it or making its effect minimal if input feels laggy.
 
-    // Handle BUTTON_1 - 高频射击
+    if (prev_x != -1) { // Clear previous player position if valid
+         clear_rect(prev_x, prev_y, PLAYER_SIZE, PLAYER_SIZE);
+    }
+    prev_x = player.x; // Store current position for next frame's clear
+    prev_y = player.y;
+
+    if (Get_Button(JOY_LEFT) && player.x > 0) player.x -= player.speed;
+    if (Get_Button(JOY_RIGHT) && player.x < SCREEN_WIDTH - PLAYER_SIZE) player.x += player.speed;
+    if (Get_Button(JOY_UP) && player.y > 0) player.y -= player.speed;
+    if (Get_Button(JOY_DOWN) && player.y < SCREEN_HEIGHT - PLAYER_SIZE) player.y += player.speed;
+
     if (Get_Button(BUTTON_1)) {
         if (button1_debounce == 0) {
-            button1_debounce = 3;  // 减少防抖动时间，增加射击频率
-            debounce_counter = 1;   // 减少全局延迟
-            
-            // 发射三连发子弹
+            button1_debounce = 5; // Cooldown for 3-burst shot
             for (int burst = 0; burst < 3; burst++) {
-                for (int i = 0; i < MAX_BULLETS; i++) {
-                    if (!player_bullets[i].active) {
-                        player_bullets[i].x = player.x + PLAYER_SIZE / 2 + burst - 1;
-                        player_bullets[i].y = player.y - burst * 2;
-                        player_bullets[i].active = 1;
-                        player_bullets[i].speed = 4;
-                        player_bullets[i].dx = 0;
-                        player_bullets[i].dy = -1;  // Move up
-                        break;
+                if (num_active_player_bullets < MAX_BULLETS) {
+                    for (int i = 0; i < MAX_BULLETS; i++) { // Find inactive slot
+                        if (!player_bullets[i].active) {
+                            player_bullets[i].x = player.x + PLAYER_SIZE / 2 - BULLET_SIZE / 2 + (burst -1) * (BULLET_SIZE + 1) ; // Slight spread
+                            player_bullets[i].y = player.y - BULLET_SIZE - burst * 2;
+                            player_bullets[i].active = 1;
+                            player_bullets[i].speed = 4;
+                            player_bullets[i].dx = 0;
+                            player_bullets[i].dy = -1;
+                            player_bullets[i].shape = SHAPE_SOLID_SQUARE;
+                            active_player_bullet_indices[num_active_player_bullets++] = i;
+                            break; 
+                        }
                     }
                 }
             }
         }
-    } else {
-        button1_debounce = 0;  // Reset when button is released
     }
+    if (button1_debounce > 0) button1_debounce--;
 
-    // Handle BUTTON_2 - 超级扩散射击
     if (Get_Button(BUTTON_2)) {
         if (button2_debounce == 0) {
-            button2_debounce = 15;  // 15 frame debounce for spread shot
-            debounce_counter = 5;   // 5 frame delay for all inputs
-            
-            // 发射16方向的子弹（更密集）
-            int directions[16][2] = {
-                {0, -1},   // Up
-                {1, -2},   // Up-Right steep
-                {1, -1},   // Up-Right
-                {2, -1},   // Up-Right shallow
-                {1, 0},    // Right
-                {2, 1},    // Down-Right shallow
-                {1, 1},    // Down-Right
-                {1, 2},    // Down-Right steep
-                {0, 1},    // Down
-                {-1, 2},   // Down-Left steep
-                {-1, 1},   // Down-Left
-                {-2, 1},   // Down-Left shallow
-                {-1, 0},   // Left
-                {-2, -1},  // Up-Left shallow
-                {-1, -1},  // Up-Left
-                {-1, -2}   // Up-Left steep
-            };
-            
-            int bullets_fired = 0;
-            for (int dir = 0; dir < 16 && bullets_fired < 16; dir++) {
-                for (int i = 0; i < MAX_BULLETS && bullets_fired < 16; i++) {
-                    if (!player_bullets[i].active) {
-                        player_bullets[i].x = player.x + PLAYER_SIZE / 2;
-                        player_bullets[i].y = player.y;
-                        player_bullets[i].active = 1;
-                        player_bullets[i].speed = 3;
-                        player_bullets[i].dx = directions[dir][0];
-                        player_bullets[i].dy = directions[dir][1];
-                        bullets_fired++;
-                        break;
+            button2_debounce = 20; // Cooldown for spread shot
+            int directions[8][2] = {{0, -1}, {1, -1}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}}; // 8 directions
+            for (int dir = 0; dir < 8; dir++) {
+                if (num_active_player_bullets < MAX_BULLETS) {
+                     for (int i = 0; i < MAX_BULLETS; i++) { // Find inactive slot
+                        if (!player_bullets[i].active) {
+                            player_bullets[i].x = player.x + PLAYER_SIZE / 2 - BULLET_SIZE / 2;
+                            player_bullets[i].y = player.y;
+                            player_bullets[i].active = 1;
+                            player_bullets[i].speed = 3;
+                            player_bullets[i].dx = directions[dir][0];
+                            player_bullets[i].dy = directions[dir][1];
+                            player_bullets[i].shape = SHAPE_SOLID_SQUARE;
+                            active_player_bullet_indices[num_active_player_bullets++] = i;
+                            break;
+                        }
                     }
                 }
             }
         }
-    } else {
-        button2_debounce = 0;
     }
-    
-    // Handle CENTER button - 追踪子弹
+     if (button2_debounce > 0) button2_debounce--;
+
     if (Get_Button(JOY_CTR)) {
         if (center_button_debounce == 0) {
-            center_button_debounce = 30;  // 30帧防抖动，避免过于频繁发射
-            debounce_counter = 5;
-            
-            // 发射追踪子弹
+            center_button_debounce = 30;
             fire_tracking_bullet();
         }
-    } else {
-        center_button_debounce = 0;
     }
-    
-    // Decrease debounce counters
-    if (button1_debounce > 0) button1_debounce--;
-    if (button2_debounce > 0) button2_debounce--;
     if (center_button_debounce > 0) center_button_debounce--;
     
-    // Draw player
-    draw_rect(player.x, player.y, PLAYER_SIZE, PLAYER_SIZE, BLUE);
-    
-    prev_x = player.x;
-    prev_y = player.y;
+    draw_rect_optimized(player.x, player.y, PLAYER_SIZE, PLAYER_SIZE, BLUE);
 }
 
-// 优化的子弹更新 - 批量处理
 void update_player_bullets_optimized(void) {
-    // 第一遍：更新位置和标记无效子弹
-    for (int i = 0; i < MAX_BULLETS; i++) {
-        if (!player_bullets[i].active) continue;
-        
-        // 清除旧位置
-        clear_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
-        
-        // 更新位置
-        player_bullets[i].x += player_bullets[i].dx * player_bullets[i].speed;
-        player_bullets[i].y += player_bullets[i].dy * player_bullets[i].speed;
-        
-        // 屏幕外检查
-        if (player_bullets[i].y < -10 || player_bullets[i].y > SCREEN_HEIGHT + 10 ||
-            player_bullets[i].x < -10 || player_bullets[i].x > SCREEN_WIDTH + 10) {
-            player_bullets[i].active = 0;
+    for (int i = 0; i < num_active_player_bullets; i++) {
+        int bullet_idx = active_player_bullet_indices[i];
+        Bullet* b = &player_bullets[bullet_idx];
+
+        clear_rect(b->x, b->y, BULLET_SIZE, BULLET_SIZE);
+
+        b->x += b->dx * b->speed;
+        b->y += b->dy * b->speed;
+
+        if (b->x < -BULLET_SIZE || b->x > SCREEN_WIDTH || b->y < -BULLET_SIZE || b->y > SCREEN_HEIGHT) {
+            b->active = 0; // Mark as inactive
         }
-    }
-    
-    // 第二遍：只绘制有效子弹
-    for (int i = 0; i < MAX_BULLETS; i++) {
-        if (player_bullets[i].active) {
-            u16 bullet_color = (player_bullets[i].dy == -1 && player_bullets[i].dx == 0) ? WHITE : CYAN;
-            draw_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE, bullet_color);
+
+        if (!b->active) { // Remove from active list
+            active_player_bullet_indices[i] = active_player_bullet_indices[--num_active_player_bullets];
+            i--; // Re-process the swapped element in the next iteration
+        } else {
+            // OPTIMIZATION: Player bullets are always solid squares and small
+            u16 bullet_color = (b->dx == 0 && b->dy == -1) ? WHITE : CYAN; // Straight vs Spread
+            draw_rect_optimized(b->x, b->y, BULLET_SIZE, BULLET_SIZE, bullet_color);
         }
     }
 }
 
-#define update_player_bullets update_player_bullets_optimized
-
-// 更新追踪子弹的函数
 void update_tracking_bullets(void) {
-    for (int i = 0; i < MAX_TRACKING_BULLETS; i++) {
-        if (!tracking_bullets[i].active) continue;
-        
-        // 清除旧位置
-        LCD_DrawRectangle(tracking_bullets[i].x, tracking_bullets[i].y, 
-                         tracking_bullets[i].x + TRACKING_BULLET_SIZE - 1, 
-                         tracking_bullets[i].y + TRACKING_BULLET_SIZE - 1, BLACK);
-        
-        // 减少生存时间
-        tracking_bullets[i].lifetime--;
-        if (tracking_bullets[i].lifetime <= 0) {
-            tracking_bullets[i].active = 0;
-            continue;
-        }
-        
-        // 检查目标敌人是否还存在
-        int target_index = tracking_bullets[i].target_enemy_index;
-        if (target_index < 0 || target_index >= MAX_ENEMIES || !enemies[target_index].active) {
-            // 重新寻找最近的敌人
-            target_index = find_nearest_enemy(tracking_bullets[i].x, tracking_bullets[i].y);
-            tracking_bullets[i].target_enemy_index = target_index;
-            
-            if (target_index == -1) {
-                // 没有敌人可追踪，子弹向上飞行
-                tracking_bullets[i].y -= TRACKING_BULLET_SPEED;
+    for (int i = 0; i < num_active_tracking_bullets; i++) {
+        int tb_idx = active_tracking_bullet_indices[i];
+        TrackingBullet* tb = &tracking_bullets[tb_idx];
+
+        clear_rect(tb->x, tb->y, TRACKING_BULLET_SIZE, TRACKING_BULLET_SIZE);
+
+        tb->lifetime--;
+        if (tb->lifetime <= 0) {
+            tb->active = 0;
+        } else {
+            int target_global_idx = tb->target_enemy_index;
+            // Check if current target is still valid (active and within bounds)
+            if (target_global_idx < 0 || target_global_idx >= MAX_ENEMIES || !enemies[target_global_idx].active) {
+                tb->target_enemy_index = find_nearest_enemy(tb->x, tb->y); // Find new target
+                target_global_idx = tb->target_enemy_index;
+            }
+
+            if (target_global_idx != -1) { // If target exists
+                int target_x = enemies[target_global_idx].x + ENEMY_SIZE / 2;
+                int target_y = enemies[target_global_idx].y + ENEMY_SIZE / 2;
+                int dx = target_x - (tb->x + TRACKING_BULLET_SIZE / 2);
+                int dy = target_y - (tb->y + TRACKING_BULLET_SIZE / 2);
+
+                if (dx > TRACKING_BULLET_SPEED) tb->x += TRACKING_BULLET_SPEED;
+                else if (dx < -TRACKING_BULLET_SPEED) tb->x -= TRACKING_BULLET_SPEED;
+                else tb->x += dx;
+
+                if (dy > TRACKING_BULLET_SPEED) tb->y += TRACKING_BULLET_SPEED;
+                else if (dy < -TRACKING_BULLET_SPEED) tb->y -= TRACKING_BULLET_SPEED;
+                else tb->y += dy;
+            } else { // No target, fly straight up
+                tb->y -= TRACKING_BULLET_SPEED;
             }
         }
         
-        if (target_index >= 0) {
-            // 计算朝向目标的方向
-            int target_x = enemies[target_index].x + ENEMY_SIZE / 2;
-            int target_y = enemies[target_index].y + ENEMY_SIZE / 2;
-            
-            int dx = target_x - tracking_bullets[i].x;
-            int dy = target_y - tracking_bullets[i].y;
-            
-            // 简单的追踪算法：朝目标方向移动
-            if (dx != 0 || dy != 0) {
-                // 计算移动方向（简化版本，不使用浮点数）
-                int move_x = 0, move_y = 0;
-                
-                if (dx > TRACKING_BULLET_SPEED) move_x = TRACKING_BULLET_SPEED;
-                else if (dx < -TRACKING_BULLET_SPEED) move_x = -TRACKING_BULLET_SPEED;
-                else move_x = dx;
-                
-                if (dy > TRACKING_BULLET_SPEED) move_y = TRACKING_BULLET_SPEED;
-                else if (dy < -TRACKING_BULLET_SPEED) move_y = -TRACKING_BULLET_SPEED;
-                else move_y = dy;
-                
-                tracking_bullets[i].x += move_x;
-                tracking_bullets[i].y += move_y;
-            }
+        // Screen bounds check
+        if (tb->x < -TRACKING_BULLET_SIZE || tb->x > SCREEN_WIDTH || tb->y < -TRACKING_BULLET_SIZE || tb->y > SCREEN_HEIGHT) {
+             tb->active = 0;
         }
-        
-        // 屏幕边界检查
-        if (tracking_bullets[i].x < 0 || tracking_bullets[i].x > SCREEN_WIDTH - TRACKING_BULLET_SIZE ||
-            tracking_bullets[i].y < 0 || tracking_bullets[i].y > SCREEN_HEIGHT - TRACKING_BULLET_SIZE) {
-            tracking_bullets[i].active = 0;
-            continue;
+
+        if (!tb->active) {
+            active_tracking_bullet_indices[i] = active_tracking_bullet_indices[--num_active_tracking_bullets];
+            i--;
+        } else {
+            draw_rect_optimized(tb->x, tb->y, TRACKING_BULLET_SIZE, TRACKING_BULLET_SIZE, GREEN);
         }
-        
-        // 绘制追踪子弹（正方形边框，用绿色表示追踪子弹）
-        LCD_DrawRectangle(tracking_bullets[i].x, tracking_bullets[i].y, 
-                         tracking_bullets[i].x + TRACKING_BULLET_SIZE - 1, 
-                         tracking_bullets[i].y + TRACKING_BULLET_SIZE - 1, GREEN);
     }
 }
 
-// Update enemies with movement and random spawning
 void update_enemies(void) {
     static int spawn_timer = 0;
-    static int formation_timer = 0;
-    
-    spawn_timer++;
-    formation_timer++;
-    
-    // Spawn individual enemies randomly
-    if (spawn_timer >= 30) {  // Every 0.5 seconds at 60 FPS
-        spawn_timer = 0;
-        if (simple_rand() % 100 < 30) {  // 30% chance to spawn
-            spawn_random_enemy();
-        }
-    }
-    
-    // Spawn enemy formations occasionally
-    if (formation_timer >= 300) {  // Every 5 seconds
-        formation_timer = 0;
-        if (simple_rand() % 100 < 20) {  // 20% chance to spawn formation
-            spawn_enemy_formation();
-        }
-    }
-    
-    // Update enemy positions
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        if (enemies[i].active) {
-            // Clear old position
-            clear_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE);
-            
-            // Move enemy down
-            enemies[i].y += enemies[i].speed;
-            
-            // Remove enemy if it goes off screen
-            if (enemies[i].y > SCREEN_HEIGHT) {
-                enemies[i].speed = - enemies[i].speed;  // Reverse direction
-                enemies[i].y = SCREEN_HEIGHT;  // Reset to bottom
-                continue;
-            }
+    static int formation_timer = 0; // Currently not used for complex formations
 
-            if (enemies[i].y < 0) {
-                enemies[i].speed = - enemies[i].speed;  // Reverse direction
-                enemies[i].y = 0;  // Reset to top
-                continue;
-            }
-            
-            // Add some horizontal movement for variety
-            if (simple_rand() % 100 < 5) {  // 5% chance to change direction
-                int direction = (simple_rand() % 3) - 1;  // -1, 0, or 1
-                enemies[i].x += direction * 2;
-                
-                // Keep enemies on screen
-                if (enemies[i].x < 0) enemies[i].x = 0;
-                if (enemies[i].x > SCREEN_WIDTH - ENEMY_SIZE) enemies[i].x = SCREEN_WIDTH - ENEMY_SIZE;
-            }
-        }
+    spawn_timer++;
+    if (spawn_timer >= 20) { // Spawn more frequently for testing
+        spawn_timer = 0;
+        if (simple_rand() % 100 < 40) spawn_random_enemy(); // Increased spawn chance
     }
-    
-    // Draw enemies with different colors based on type
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        if (enemies[i].active) {
+    // formation_timer can be used for more complex spawning patterns later
+
+    for (int i = 0; i < num_active_enemies; i++) {
+        int enemy_idx = active_enemy_indices[i];
+        Enemy* e = &enemies[enemy_idx];
+
+        clear_shape(e->x, e->y, ENEMY_SIZE, e->shape);
+
+        e->y += e->speed;
+
+        // Simple boundary bounce (can be improved)
+        if (e->y > SCREEN_HEIGHT - ENEMY_SIZE) {
+            e->y = SCREEN_HEIGHT - ENEMY_SIZE;
+            e->speed *= -1;
+        } else if (e->y < 0) {
+            e->y = 0;
+            e->speed *= -1;
+        }
+        
+        // Random horizontal movement
+        if (simple_rand() % 100 < 10) {
+            e->x += (simple_rand() % 3 - 1) * 2; // Move -2, 0, or 2
+            if (e->x < 0) e->x = 0;
+            if (e->x > SCREEN_WIDTH - ENEMY_SIZE) e->x = SCREEN_WIDTH - ENEMY_SIZE;
+        }
+
+
+        // Enemy shooting logic (moved to update_enemy_bullets_optimized for clarity)
+
+        if (!e->active) { // Should not happen here, but as a safeguard
+            active_enemy_indices[i] = active_enemy_indices[--num_active_enemies];
+            i--;
+        } else {
             u16 enemy_color;
-            switch (enemies[i].type) {
+            switch (e->type) {
                 case 0: enemy_color = RED; break;
                 case 1: enemy_color = MAGENTA; break;
-                case 2: enemy_color = YELLOW; break;
-                case 3: enemy_color = GREEN; break;  // 新增第四种类型
+                case 2: enemy_color = YELLOW; break; // Changed from YELLOW to make it distinct from enemy bullets
                 default: enemy_color = RED; break;
             }
-            draw_rect(enemies[i].x, enemies[i].y, ENEMY_SIZE, ENEMY_SIZE, enemy_color);
+            draw_shape(e->x, e->y, ENEMY_SIZE, e->shape, enemy_color);
         }
     }
 }
 
-// 优化的敌人子弹系统
 void update_enemy_bullets_optimized(void) {
-    // 计算当前子弹数量，控制最大数量
-    int active_enemy_bullets = 0;
-    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
-        if (enemy_bullets[i].active) active_enemy_bullets++;
-    }
-    
-    if (active_enemy_bullets < 1000) { // 限制敌人子弹数量
-        for (int i = 0; i < MAX_ENEMIES; i++) {
-            if (!enemies[i].active) continue;
-            
-            enemies[i].shoot_timer++;
-            
-            int shoot_interval;
-            switch (enemies[i].type) {
-                case 0: shoot_interval = 120; break; // 降低射击频率
-                case 1: shoot_interval = 80; break;
-                case 2: shoot_interval = 160; break;
-                case 3: shoot_interval = 60; break;
-                default: shoot_interval = 120; break;
-            }
-            
-            if (enemies[i].shoot_timer >= shoot_interval) {
-                enemies[i].shoot_timer = 0;
-                
-                // 简化射击模式，减少计算
-                for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
-                    if (!enemy_bullets[j].active) {
-                        enemy_bullets[j].x = enemies[i].x + ENEMY_SIZE / 2;
-                        enemy_bullets[j].y = enemies[i].y + ENEMY_SIZE;
-                        enemy_bullets[j].active = 1;
-                        enemy_bullets[j].speed = 2;
-                        enemy_bullets[j].dx = 0;
-                        enemy_bullets[j].dy = 1;
-                        break; // 只发射一发，简化
-                    }
-                }
-            }
-        }
-    }
-    
-    // 批量更新敌人子弹（与玩家子弹类似的优化）
-    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
-        if (!enemy_bullets[i].active) continue;
-        
-        clear_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
-        
-        enemy_bullets[i].x += enemy_bullets[i].dx * enemy_bullets[i].speed;
-        enemy_bullets[i].y += enemy_bullets[i].dy * enemy_bullets[i].speed;
-        
-        if (enemy_bullets[i].y > SCREEN_HEIGHT + 10 || enemy_bullets[i].x < -10 || 
-            enemy_bullets[i].x > SCREEN_WIDTH + 10 || enemy_bullets[i].y < -10) {
-            enemy_bullets[i].active = 0;
-        }
-    }
-    
-    // 批量绘制
-    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
-        if (enemy_bullets[i].active) {
-            draw_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE, YELLOW);
-        }
-    }
-}
+    // Enemy shooting logic (moved from update_enemies)
+    for (int i = 0; i < num_active_enemies; i++) {
+        int enemy_idx = active_enemy_indices[i];
+        Enemy* e = &enemies[enemy_idx];
+        if (!e->active) continue; // Should not happen if active list is correct
 
-#define update_enemy_bullets update_enemy_bullets_optimized
+        e->shoot_timer++;
+        int shoot_interval;
+        switch (e->type) {
+            case 0: shoot_interval = 90; break; 
+            case 1: shoot_interval = 60; break;
+            case 2: shoot_interval = 120; break;
+            default: shoot_interval = 90; break;
+        }
 
-// 优化的碰撞检测 - 使用空间分割
-void check_collisions_optimized(void) {
-    // 只检查屏幕内的物体
-    for (int i = 0; i < MAX_BULLETS; i++) {
-        if (!player_bullets[i].active) continue;
-        
-        // 屏幕外的子弹不参与碰撞检测
-        if (player_bullets[i].x < 0 || player_bullets[i].x > SCREEN_WIDTH ||
-            player_bullets[i].y < 0 || player_bullets[i].y > SCREEN_HEIGHT) {
-            continue;
-        }
-        
-        for (int j = 0; j < MAX_ENEMIES; j++) {
-            if (!enemies[j].active) continue;
-            
-            // 快速距离检查 - 避免复杂计算
-            int dx = player_bullets[i].x - enemies[j].x;
-            int dy = player_bullets[i].y - enemies[j].y;
-            
-            // 使用平方距离避免sqrt
-            if (dx * dx + dy * dy < 25) { // 约5像素半径
-                // 精确碰撞检测
-                if (player_bullets[i].x >= enemies[j].x && 
-                    player_bullets[i].x < enemies[j].x + ENEMY_SIZE &&
-                    player_bullets[i].y >= enemies[j].y && 
-                    player_bullets[i].y < enemies[j].y + ENEMY_SIZE) {
-                    
-                    // 碰撞处理
-                    clear_rect(player_bullets[i].x, player_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
-                    clear_rect(enemies[j].x, enemies[j].y, ENEMY_SIZE, ENEMY_SIZE);
-                    
-                    player_bullets[i].active = 0;
-                    enemies[j].active = 0;
-                    
-                    if (simple_rand() % 100 < 10) {
-                        spawn_random_enemy();
-                    }
-                    break; // 子弹已销毁，跳出内层循环
-                }
-            }
-        }
-    }
-    
-    // 追踪子弹与敌人的碰撞检测
-    for (int i = 0; i < MAX_TRACKING_BULLETS; i++) {
-        if (!tracking_bullets[i].active) continue;
-        
-        for (int j = 0; j < MAX_ENEMIES; j++) {
-            if (!enemies[j].active) continue;
-            
-            // 快速距离检查
-            int dx = tracking_bullets[i].x + TRACKING_BULLET_SIZE/2 - (enemies[j].x + ENEMY_SIZE/2);
-            int dy = tracking_bullets[i].y + TRACKING_BULLET_SIZE/2 - (enemies[j].y + ENEMY_SIZE/2);
-            
-            if (dx * dx + dy * dy < 36) { // 约6像素半径
-                // 精确碰撞检测
-                if (tracking_bullets[i].x < enemies[j].x + ENEMY_SIZE &&
-                    tracking_bullets[i].x + TRACKING_BULLET_SIZE > enemies[j].x &&
-                    tracking_bullets[i].y < enemies[j].y + ENEMY_SIZE &&
-                    tracking_bullets[i].y + TRACKING_BULLET_SIZE > enemies[j].y) {
-                    
-                    // 碰撞处理
-                    LCD_DrawRectangle(tracking_bullets[i].x, tracking_bullets[i].y, 
-                                     tracking_bullets[i].x + TRACKING_BULLET_SIZE - 1, 
-                                     tracking_bullets[i].y + TRACKING_BULLET_SIZE - 1, BLACK);
-                    clear_rect(enemies[j].x, enemies[j].y, ENEMY_SIZE, ENEMY_SIZE);
-                    
-                    tracking_bullets[i].active = 0;
-                    enemies[j].active = 0;
-                    
-                    // 随机生成新敌人
-                    if (simple_rand() % 100 < 15) {
-                        spawn_random_enemy();
-                    }
+        if (e->shoot_timer >= shoot_interval && num_active_enemy_bullets < MAX_ENEMY_BULLETS) {
+            e->shoot_timer = 0;
+            for (int j = 0; j < MAX_ENEMY_BULLETS; j++) { // Find inactive slot
+                if (!enemy_bullets[j].active) {
+                    enemy_bullets[j].x = e->x + ENEMY_SIZE / 2 - BULLET_SIZE / 2;
+                    enemy_bullets[j].y = e->y + ENEMY_SIZE;
+                    enemy_bullets[j].active = 1;
+                    enemy_bullets[j].speed = 2;
+                    enemy_bullets[j].dx = 0;
+                    enemy_bullets[j].dy = 1; // Move down
+                    enemy_bullets[j].shape = e->shape; // Enemy bullet takes enemy's shape
+                    active_enemy_bullet_indices[num_active_enemy_bullets++] = j;
                     break;
                 }
             }
         }
     }
-    
-    // 敌人子弹碰撞检测（类似优化）
-    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
-        if (!enemy_bullets[i].active) continue;
-        
-        // 与玩家的距离检查
-        int dx = enemy_bullets[i].x - player.x;
-        int dy = enemy_bullets[i].y - player.y;
-        
-        if (dx * dx + dy * dy < 16) { // 约4像素半径
-            if (enemy_bullets[i].x >= player.x && 
-                enemy_bullets[i].x < player.x + PLAYER_SIZE &&
-                enemy_bullets[i].y >= player.y && 
-                enemy_bullets[i].y < player.y + PLAYER_SIZE) {
-                
-                clear_rect(enemy_bullets[i].x, enemy_bullets[i].y, BULLET_SIZE, BULLET_SIZE);
-                enemy_bullets[i].active = 0;
+
+    // Update and draw active enemy bullets
+    for (int i = 0; i < num_active_enemy_bullets; i++) {
+        int bullet_idx = active_enemy_bullet_indices[i];
+        Bullet* b = &enemy_bullets[bullet_idx];
+
+        clear_shape(b->x, b->y, BULLET_SIZE, b->shape); // Using BULLET_SIZE
+
+        b->x += b->dx * b->speed;
+        b->y += b->dy * b->speed;
+
+        if (b->x < -BULLET_SIZE || b->x > SCREEN_WIDTH || b->y < -BULLET_SIZE || b->y > SCREEN_HEIGHT + 10) {
+            b->active = 0;
+        }
+
+        if (!b->active) {
+            active_enemy_bullet_indices[i] = active_enemy_bullet_indices[--num_active_enemy_bullets];
+            i--; 
+        } else {
+            // Enemy bullets are yellow and use their shape (or BULLET_SIZE if shape is solid)
+            int size_to_draw = (b->shape == SHAPE_SOLID_SQUARE) ? BULLET_SIZE : ENEMY_SIZE; // A bit of a hack, consider bullet specific shapes
+            if (b->shape == SHAPE_SOLID_SQUARE) {
+                 draw_rect_optimized(b->x, b->y, BULLET_SIZE, BULLET_SIZE, YELLOW);
+            } else {
+                 draw_shape(b->x, b->y, BULLET_SIZE, b->shape, YELLOW); // Draw with BULLET_SIZE
             }
         }
     }
 }
 
-// 替换原函数
-#define check_collisions check_collisions_optimized
 
-// Count active bullets and enemies
-int count_active_objects(void) {
-    int bullet_count = 0;
-    int enemy_count = 0;
+void check_collisions_optimized(void) {
+    // Player bullets vs Enemies
+    for (int i = 0; i < num_active_player_bullets; i++) {
+        int pb_idx = active_player_bullet_indices[i];
+        Bullet* pb = &player_bullets[pb_idx];
+        if (!pb->active) continue;
+
+        for (int j = 0; j < num_active_enemies; j++) {
+            int enemy_idx = active_enemy_indices[j];
+            Enemy* e = &enemies[enemy_idx];
+            if (!e->active) continue;
+
+            // AABB collision: Player Bullet (size BULLET_SIZE) vs Enemy (size ENEMY_SIZE)
+            if (pb->x < e->x + ENEMY_SIZE &&
+                pb->x + BULLET_SIZE > e->x &&
+                pb->y < e->y + ENEMY_SIZE &&
+                pb->y + BULLET_SIZE > e->y) {
+                
+                clear_rect(pb->x, pb->y, BULLET_SIZE, BULLET_SIZE); // Clear bullet
+                clear_shape(e->x, e->y, ENEMY_SIZE, e->shape);   // Clear enemy
+                
+                pb->active = 0; // Will be removed by its update loop
+                e->active = 0;  // Will be removed by its update loop (or needs explicit removal here)
+                                // For enemies, explicit removal from active list here is safer if no separate update path for inactive ones
+                active_enemy_indices[j] = active_enemy_indices[--num_active_enemies];
+                j--; // recheck swapped enemy
+
+                // OPTIONAL: spawn new enemy on kill, perhaps less frequently
+                // if(simple_rand() % 100 < 5) spawn_random_enemy(); 
+                break; // Player bullet is destroyed, no need to check against other enemies
+            }
+        }
+    }
+
+    // Tracking bullets vs Enemies
+    for (int i = 0; i < num_active_tracking_bullets; i++) {
+        int tb_idx = active_tracking_bullet_indices[i];
+        TrackingBullet* tb = &tracking_bullets[tb_idx];
+        if (!tb->active) continue;
+
+        for (int j = 0; j < num_active_enemies; j++) {
+            int enemy_idx = active_enemy_indices[j];
+            Enemy* e = &enemies[enemy_idx];
+            if (!e->active) continue;
+
+            // AABB: Tracking Bullet (TRACKING_BULLET_SIZE) vs Enemy (ENEMY_SIZE)
+             if (tb->x < e->x + ENEMY_SIZE &&
+                tb->x + TRACKING_BULLET_SIZE > e->x &&
+                tb->y < e->y + ENEMY_SIZE &&
+                tb->y + TRACKING_BULLET_SIZE > e->y) {
+                
+                clear_rect(tb->x, tb->y, TRACKING_BULLET_SIZE, TRACKING_BULLET_SIZE);
+                clear_shape(e->x, e->y, ENEMY_SIZE, e->shape);
+                
+                tb->active = 0; 
+                e->active = 0;
+                active_enemy_indices[j] = active_enemy_indices[--num_active_enemies];
+                j--;
+                break; 
+            }
+        }
+    }
     
-    for (int i = 0; i < MAX_BULLETS; i++) {
-        if (player_bullets[i].active) bullet_count++;
+    // Enemy bullets vs Player
+    for (int i = 0; i < num_active_enemy_bullets; i++) {
+        int eb_idx = active_enemy_bullet_indices[i];
+        Bullet* eb = &enemy_bullets[eb_idx];
+        if (!eb->active) continue;
+
+        // AABB: Enemy Bullet (BULLET_SIZE) vs Player (PLAYER_SIZE)
+        if (eb->x < player.x + PLAYER_SIZE &&
+            eb->x + BULLET_SIZE > player.x && // Assuming enemy bullet shape is drawn with BULLET_SIZE
+            eb->y < player.y + PLAYER_SIZE &&
+            eb->y + BULLET_SIZE > player.y) {
+            
+            clear_shape(eb->x, eb->y, BULLET_SIZE, eb->shape); // Clear bullet based on its shape and BULLET_SIZE
+            eb->active = 0; 
+            // Player Hit Logic (e.g., lose life, game over) - not implemented here
+            // For now, player is invincible, but bullet is destroyed
+        }
     }
-    for (int i = 0; i < MAX_ENEMY_BULLETS; i++) {
-        if (enemy_bullets[i].active) bullet_count++;
-    }
-    for (int i = 0; i < MAX_TRACKING_BULLETS; i++) {
-        if (tracking_bullets[i].active) bullet_count++;
-    }
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        if (enemies[i].active) enemy_count++;
-    }
-    
-    return bullet_count + enemy_count;
 }
 
-// Main game loop
+
 void game_loop(int difficulty) {
     init_game();
-    
-    // Clear screen
-    LCD_Clear(BLACK);
-    
-    while (1) {  // Infinite loop - no exit mechanism
-        // Increment frame counter
+    LCD_Clear(BLACK); // Assumes this is now fast
+
+    // Pre-draw static UI elements if any (outside game area)
+    // Example: LCD_ShowString(SCREEN_WIDTH + 5, 0, (u8*)"STAT", WHITE); // Header for stats
+
+    while (1) {
         frame_counter++;
-        
-        // Update performance counters
+
         update_fps_counter();
-        update_entity_counter();
+        update_entity_counter_optimized(); // Now uses quick counts
+
+        // Store player's old position before any updates for clean clearing
+        int old_player_x = player.x;
+        int old_player_y = player.y;
+
+        update_player(); // Handles input, movement, and player firing, also draws player
+
+        // Collisions before updates that might remove entities
+        check_collisions_optimized();
+
+        update_player_bullets_optimized(); // Clears, moves, draws, and manages active list
+        update_tracking_bullets();         // Clears, moves, draws, and manages active list
+        update_enemies();                  // Clears, moves, draws, and manages active list
+        update_enemy_bullets_optimized();  // Handles enemy firing, clears, moves, draws, manages active list
         
-        // Update game objects
-        update_player();
-        
-        // Check collisions BEFORE updating bullets
-        check_collisions();
-        
-        // Then update bullets (this will clear inactive bullets properly)
-        update_player_bullets();
-        update_tracking_bullets();  // 新增：更新追踪子弹
-        update_enemies();
-        update_enemy_bullets();
-        
-        // Draw performance counters (at the end to avoid being overwritten)
-        draw_performance_counters();
-        
-        // Frame rate control - maintain 60 FPS
-        delay_1ms(1); // Approximately 60 FPS
+        // Draw performance counters last so they are on top (if they are outside game area)
+        // If they are inside game area, they might be overwritten.
+        // The current draw_performance_counters clears its own background.
+        if(SCREEN_WIDTH < 160 - 40) { // Crude check if there's space for side panel
+             draw_performance_counters();
+        }
+
+
+        // OPTIMIZATION: Adjust delay. A small delay helps prevent 100% CPU usage
+        // and can make the game feel smoother if FPS is very high.
+        // If your target is 60 FPS (16ms/frame), and your loop takes ~10ms, delay_1ms(1) is fine.
+        // If your loop takes >16ms, any delay makes it worse.
+        // For development, you might remove delay to see max possible FPS.
+        delay_1ms(1); // Minimal delay
     }
 }
 
 int main(void) {
   IO_init();
-  
-  int difficulty = select();  // Call assembly function
-  
-  // Start game based on difficulty
+  int difficulty = select();
   game_loop(difficulty);
-  
   return 0;
 }
