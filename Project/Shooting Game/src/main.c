@@ -242,6 +242,8 @@ int find_nearest_enemy(float x, float y) {
 
     for (int i = 0; i < num_active_enemies; i++) {
         int enemy_idx = active_enemy_indices[i];
+        // Ensure we are checking against an active enemy
+        if (!enemies[enemy_idx].active) continue; 
         float dx = enemies[enemy_idx].x - x;
         float dy = enemies[enemy_idx].y - y;
         float distance_squared = dx * dx + dy * dy;
@@ -276,11 +278,12 @@ void spawn_random_enemy(void) {
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (!enemies[i].active) {
             enemies[i].x = random_float(0.0f, (float)SCREEN_WIDTH - ENEMY_SIZE);
-            enemies[i].y = random_float(5.0f, 25.0f);
+            enemies[i].y = random_float(5.0f, 25.0f); // Spawns near top of screen
+            // To spawn above screen: enemies[i].y = -random_float(5.0f, 25.0f);
             enemies[i].active = 1;
-            enemies[i].speed = random_float(0.5f, 1.5f); // Slightly slower enemies
+            enemies[i].speed = random_float(0.5f, 1.5f); 
             enemies[i].shoot_timer = simple_rand() % 30 + 15;
-            enemies[i].type = simple_rand() % 3; // type 0, 1, or 2
+            enemies[i].type = simple_rand() % 3; 
             enemies[i].shape = simple_rand() % 3;
             
             active_enemy_indices[num_active_enemies++] = i;
@@ -289,10 +292,10 @@ void spawn_random_enemy(void) {
     }
 }
 
-void init_game(void) {
+void init_game(void) { // Consider taking (int difficulty) if it affects init
     player.x = SCREEN_WIDTH / 2.0f;
     player.y = (float)SCREEN_HEIGHT - PLAYER_SIZE - 2.0f;
-    player.speed = 2.5f; // Player speed
+    player.speed = 2.5f;
 
     num_active_player_bullets = 0;
     for (int i = 0; i < MAX_BULLETS; i++) player_bullets[i].active = 0;
@@ -310,6 +313,9 @@ void init_game(void) {
 
     fps_measurement_start_time = 0;
     fps_frame_count = 0;
+    // Reset last displayed counters to force redraw on first frame
+    last_displayed_fps = -1;
+    last_displayed_entities = -1; 
 }
 
 void update_player(void) {
@@ -318,7 +324,7 @@ void update_player(void) {
     static int button2_debounce = 0;
     static int center_button_debounce = 0;
 
-    if (prev_x != -1.0f) {
+    if (prev_x != -1.0f) { // Check if prev_x is initialized
          clear_rect(prev_x, prev_y, PLAYER_SIZE, PLAYER_SIZE);
     }
     prev_x = player.x;
@@ -329,21 +335,21 @@ void update_player(void) {
     if (Get_Button(JOY_UP) && player.y > 0.0f) player.y -= player.speed;
     if (Get_Button(JOY_DOWN) && player.y < (float)SCREEN_HEIGHT - PLAYER_SIZE) player.y += player.speed;
 
-    if (Get_Button(BUTTON_1)) { // Burst shot
+    if (Get_Button(BUTTON_1)) { 
         if (button1_debounce == 0) {
-            button1_debounce = 7; // Slightly longer cooldown for 3-burst
+            button1_debounce = 7; 
             for (int burst = 0; burst < 3; burst++) {
                 if (num_active_player_bullets < MAX_BULLETS) {
                     for (int i = 0; i < MAX_BULLETS; i++) {
                         if (!player_bullets[i].active) {
-                            player_bullets[i].x = player.x + PLAYER_SIZE / 2.0f - BULLET_SIZE / 2.0f + (burst -1) * (BULLET_SIZE + 1.5f); // Spread burst slightly
-                            player_bullets[i].y = player.y - BULLET_SIZE - burst * 2.0f; // Stagger burst start
+                            player_bullets[i].x = player.x + PLAYER_SIZE / 2.0f - BULLET_SIZE / 2.0f + (burst -1) * (BULLET_SIZE + 1.5f); 
+                            player_bullets[i].y = player.y - BULLET_SIZE - burst * 2.0f; 
                             player_bullets[i].active = 1;
                             player_bullets[i].speed = 4.5f;
                             player_bullets[i].dx = 0.0f;
                             player_bullets[i].dy = -1.0f;
                             player_bullets[i].shape = SHAPE_SOLID_SQUARE;
-                            player_bullets[i].pattern = PATTERN_NORMAL; // Player bullets are normal
+                            player_bullets[i].pattern = PATTERN_NORMAL; 
                             active_player_bullet_indices[num_active_player_bullets++] = i;
                             break; 
                         }
@@ -354,11 +360,10 @@ void update_player(void) {
     }
     if (button1_debounce > 0) button1_debounce--;
 
-    if (Get_Button(BUTTON_2)) { // Spread shot
+    if (Get_Button(BUTTON_2)) { 
         if (button2_debounce == 0) {
-            button2_debounce = 25; // Cooldown for spread shot
-            // More focused forward spread
-            float directions[5][2] = {{0, -1}, {0.382f, -0.923f}, {-0.382f, -0.923f}, {0.707f, -0.707f}, {-0.707f, -0.707f}}; // 5 directions, mostly forward
+            button2_debounce = 25; 
+            float directions[5][2] = {{0, -1}, {0.382f, -0.923f}, {-0.382f, -0.923f}, {0.707f, -0.707f}, {-0.707f, -0.707f}}; 
             int num_directions = 5;
             for (int dir = 0; dir < num_directions; dir++) {
                 if (num_active_player_bullets < MAX_BULLETS) {
@@ -371,7 +376,7 @@ void update_player(void) {
                             player_bullets[i].dx = directions[dir][0];
                             player_bullets[i].dy = directions[dir][1];
                             player_bullets[i].shape = SHAPE_SOLID_SQUARE;
-                            player_bullets[i].pattern = PATTERN_NORMAL; // Player bullets are normal
+                            player_bullets[i].pattern = PATTERN_NORMAL; 
                             active_player_bullet_indices[num_active_player_bullets++] = i;
                             break;
                         }
@@ -382,7 +387,7 @@ void update_player(void) {
     }
      if (button2_debounce > 0) button2_debounce--;
 
-    if (Get_Button(JOY_CTR)) { // Tracking shot
+    if (Get_Button(JOY_CTR)) { 
         if (center_button_debounce == 0) {
             center_button_debounce = 30;
             fire_tracking_bullet();
@@ -400,11 +405,10 @@ void update_player_bullets_optimized(void) {
 
         clear_rect(b->x, b->y, BULLET_SIZE, BULLET_SIZE);
 
-        // Player bullets are always PATTERN_NORMAL, but keeping structure for consistency
         if (b->pattern == PATTERN_NORMAL) {
             b->x += b->dx * b->speed;
             b->y += b->dy * b->speed;
-        } else if (b->pattern == PATTERN_SPIRAL) { // This block won't be hit by player bullets currently
+        } else if (b->pattern == PATTERN_SPIRAL) { 
             float base_move_x = b->dx * b->speed;
             float base_move_y = b->dy * b->speed;
             float perp_dx = -b->dy;
@@ -425,8 +429,7 @@ void update_player_bullets_optimized(void) {
             i--;
         } else {
             u16 bullet_color = WHITE; 
-            // Color player bullets based on if they are straight or spread
-            if (b->dx != 0.0f || (b->dx == 0.0f && b->dy != -1.0f && b->dy != 0.0f) ) { // Any non-straight-up bullet
+            if (b->dx != 0.0f || (b->dx == 0.0f && b->dy != -1.0f && b->dy != 0.0f) ) { 
                  bullet_color = CYAN;
             }
             draw_rect_optimized((int)b->x, (int)b->y, BULLET_SIZE, BULLET_SIZE, bullet_color);
@@ -447,27 +450,26 @@ void update_tracking_bullets(void) {
         } else {
             int target_global_idx = tb->target_enemy_index;
             if (target_global_idx < 0 || target_global_idx >= MAX_ENEMIES || !enemies[target_global_idx].active) {
-                tb->target_enemy_index = find_nearest_enemy(tb->x, tb->y);
-                target_global_idx = tb->target_enemy_index;
+                tb->target_enemy_index = find_nearest_enemy(tb->x, tb->y); // Find new target if old one is invalid
+                target_global_idx = tb->target_enemy_index; // Update target_global_idx with the new target
             }
 
-            if (target_global_idx != -1 && enemies[target_global_idx].active) { // Ensure target is still active
+            if (target_global_idx != -1 && enemies[target_global_idx].active) { 
                 float target_x = enemies[target_global_idx].x + ENEMY_SIZE / 2.0f;
                 float target_y = enemies[target_global_idx].y + ENEMY_SIZE / 2.0f;
                 float dx_track = target_x - (tb->x + TRACKING_BULLET_SIZE / 2.0f);
                 float dy_track = target_y - (tb->y + TRACKING_BULLET_SIZE / 2.0f);
 
-                // Normalize direction vector (dx_track, dy_track)
                 float dist = sqrtf(dx_track * dx_track + dy_track * dy_track);
-                if (dist > 0) {
+                if (dist > TRACKING_BULLET_SPEED) { // Only normalize and move if further than one step
                     tb->x += (dx_track / dist) * TRACKING_BULLET_SPEED;
                     tb->y += (dy_track / dist) * TRACKING_BULLET_SPEED;
-                } else { // Already at target (or very close)
-                     tb->x = target_x - TRACKING_BULLET_SIZE / 2.0f;
-                     tb->y = target_y - TRACKING_BULLET_SIZE / 2.0f;
+                } else if (dist > 0) { // Closer than one step, just move to target
+                     tb->x += dx_track;
+                     tb->y += dy_track;
                 }
-            } else { // No target or target became inactive
-                tb->y -= TRACKING_BULLET_SPEED; // Fly straight up
+            } else { 
+                tb->y -= TRACKING_BULLET_SPEED; 
             }
         }
         
@@ -488,9 +490,9 @@ void update_enemies(void) {
     static int spawn_timer = 0;
 
     spawn_timer++;
-    if (spawn_timer >= 60) { // Slower general enemy spawn
+    if (spawn_timer >= 60) { 
         spawn_timer = 0;
-        if (simple_rand() % 100 < 30) spawn_random_enemy(); // Slightly higher chance when it does try
+        if (simple_rand() % 100 < 30) spawn_random_enemy(); 
     }
 
     for (int i = 0; i < num_active_enemies; i++) {
@@ -501,21 +503,22 @@ void update_enemies(void) {
 
         e->y += e->speed;
 
-        if (e->y > SCREEN_HEIGHT) { // Off screen bottom
+        if (e->y > SCREEN_HEIGHT) { 
             e->active = 0;
-        } else if (e->y < -ENEMY_SIZE * 2) { // Well off screen top
+        } else if (e->y < -ENEMY_SIZE * 2.0f) { // Allow some offscreen top before deactivating
              e->active = 0;
         }
         
-        // Optional: very simple horizontal movement for some types
-        if (e->type == 1 && (fps_frame_count % 120 < 60)) { // type 1 moves one way for 1s, then other for 1s
-            e->x += e->speed * 0.5f;
-        } else if (e->type == 1) {
-            e->x -= e->speed * 0.5f;
+        if (e->type == 1 ) {
+            if(fps_frame_count % 120 < 60) { // Every 2 seconds, change direction for 1 second
+                 e->x += e->speed * 0.5f;
+            } else {
+                 e->x -= e->speed * 0.5f;
+            }
         }
-        // Ensure enemy stays within horizontal bounds
-        if (e->x < 0) e->x = 0;
-        if (e->x > SCREEN_WIDTH - ENEMY_SIZE) e->x = SCREEN_WIDTH - ENEMY_SIZE;
+       
+        if (e->x < 0.0f) e->x = 0.0f;
+        if (e->x > (float)SCREEN_WIDTH - ENEMY_SIZE) e->x = (float)SCREEN_WIDTH - ENEMY_SIZE;
 
 
         if (!e->active) {
@@ -524,7 +527,7 @@ void update_enemies(void) {
         } else {
             u16 enemy_color;
             switch (e->type) {
-                case 0: enemy_color = RED; break;       // Red will shoot spirals
+                case 0: enemy_color = RED; break;       
                 case 1: enemy_color = MAGENTA; break;
                 case 2: enemy_color = YELLOW; break;
                 default: enemy_color = RED; break;
@@ -543,22 +546,21 @@ void update_enemy_bullets_optimized(void) {
 
         e->shoot_timer++;
         int shoot_interval;
-        int bullet_count = 1; // Default to 1, will be overridden
+        int bullet_count = 1; 
         float bullet_speed = 1.8f;
 
-        // Determine shooting properties based on enemy type
-        if (e->type == 0) { // Shoots UPWARD SPIRAL bullets
-            shoot_interval = 70; // Slower rate for potentially more complex bullets
-            bullet_count = 1;    // Shoots one spiral stream at a time
-        } else if (e->type == 1) { // Shoots normal downward burst
+        if (e->type == 0) { 
+            shoot_interval = 70; 
+            bullet_count = 1;    
+        } else if (e->type == 1) { 
             shoot_interval = 50;
             bullet_count = 3;
             bullet_speed = 2.2f;
-        } else if (e->type == 2) { // Shoots 8-way normal spread
+        } else if (e->type == 2) { 
             shoot_interval = 80;
-            bullet_count = 8; // Handled by inner loop
+            bullet_count = 8; 
             bullet_speed = 1.5f;
-        } else { // Default fallback
+        } else { 
             shoot_interval = 60;
             bullet_count = 1;
         }
@@ -566,27 +568,27 @@ void update_enemy_bullets_optimized(void) {
         if (e->shoot_timer >= shoot_interval) {
             e->shoot_timer = 0;
             
-            if (e->type == 0) { // UPWARD SPIRAL
+            if (e->type == 0) { 
                 for (int k = 0; k < bullet_count && num_active_enemy_bullets < MAX_ENEMY_BULLETS; k++) {
                      for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
                         if (!enemy_bullets[j].active) {
                             enemy_bullets[j].x = e->x + ENEMY_SIZE / 2.0f - BULLET_SIZE / 2.0f;
-                            enemy_bullets[j].y = e->y - BULLET_SIZE; // Start slightly above enemy for upward
+                            enemy_bullets[j].y = e->y - BULLET_SIZE; 
                             enemy_bullets[j].active = 1;
-                            enemy_bullets[j].speed = 1.5f;      // Speed of spiral
-                            enemy_bullets[j].dx = 0.0f;         // Base direction X (none for vertical spiral)
-                            enemy_bullets[j].dy = -1.0f;        // Base direction Y (UP)
-                            enemy_bullets[j].shape = SHAPE_SOLID_SQUARE; // Or e->shape
+                            enemy_bullets[j].speed = 1.5f;      
+                            enemy_bullets[j].dx = 0.0f;         
+                            enemy_bullets[j].dy = -1.0f;        
+                            enemy_bullets[j].shape = SHAPE_SOLID_SQUARE; 
                             enemy_bullets[j].pattern = PATTERN_SPIRAL;
-                            enemy_bullets[j].angle = random_float(0.0f, 6.28318f); // Random initial angle (0 to 2*PI)
-                            enemy_bullets[j].angle_increment = 0.15f; // Tightness of spiral
-                            enemy_bullets[j].amplitude = 6.0f;   // Width of spiral
+                            enemy_bullets[j].angle = random_float(0.0f, 6.28318f); 
+                            enemy_bullets[j].angle_increment = 0.15f; 
+                            enemy_bullets[j].amplitude = 6.0f;   
                             active_enemy_bullet_indices[num_active_enemy_bullets++] = j;
                             break;
                         }
                     }
                 }
-            } else if (e->type == 2) { // 8-way spread (PATTERN_NORMAL)
+            } else if (e->type == 2) { 
                 float directions[8][2] = {{0,1},{0.707f,0.707f},{1,0},{0.707f,-0.707f},{0,-1},{-0.707f,-0.707f},{-1,0},{-0.707f,0.707f}};
                 for (int dir = 0; dir < 8 && num_active_enemy_bullets < MAX_ENEMY_BULLETS; dir++) {
                     for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
@@ -604,7 +606,7 @@ void update_enemy_bullets_optimized(void) {
                         }
                     }
                 }
-            } else { // e->type == 1 or default: Downward burst (PATTERN_NORMAL)
+            } else { 
                 float total_spread_width = (bullet_count - 1) * (BULLET_SIZE + 1.0f);
                 float start_x_offset = (bullet_count > 1) ? -total_spread_width / 2.0f : 0.0f;
 
@@ -616,7 +618,7 @@ void update_enemy_bullets_optimized(void) {
                             enemy_bullets[j].active = 1;
                             enemy_bullets[j].speed = bullet_speed;
                             enemy_bullets[j].dx = 0.0f;
-                            enemy_bullets[j].dy = 1.0f; // Move down
+                            enemy_bullets[j].dy = 1.0f; 
                             enemy_bullets[j].shape = e->shape;
                             enemy_bullets[j].pattern = PATTERN_NORMAL;
                             active_enemy_bullet_indices[num_active_enemy_bullets++] = j;
@@ -633,7 +635,8 @@ void update_enemy_bullets_optimized(void) {
         int bullet_idx = active_enemy_bullet_indices[i];
         Bullet* b = &enemy_bullets[bullet_idx];
 
-        clear_shape(b->x, b->y, BULLET_SIZE, b->shape);
+        // MODIFICATION: Use clear_rect for all enemy bullets as they are drawn as solid squares
+        clear_rect(b->x, b->y, BULLET_SIZE, BULLET_SIZE);
 
         if (b->pattern == PATTERN_NORMAL) {
             b->x += b->dx * b->speed;
@@ -641,12 +644,10 @@ void update_enemy_bullets_optimized(void) {
         } else if (b->pattern == PATTERN_SPIRAL) {
             float base_move_x = b->dx * b->speed;
             float base_move_y = b->dy * b->speed;
-            // Perpendicular to (dx, dy) is (-dy, dx)
             float perp_dx = -b->dy;
             float perp_dy = b->dx;
-             // If base direction is (0,0) or not moving, provide a default perpendicular for oscillation
-            if (perp_dx == 0.0f && perp_dy == 0.0f && (b->dx != 0.0f || b->dy != 0.0f)) { /* should not happen if dx/dy is set for spiral */ }
-            else if (perp_dx == 0.0f && perp_dy == 0.0f) { perp_dx = 1.0f; } // Default horizontal oscillation if no base movement
+            if (perp_dx == 0.0f && perp_dy == 0.0f && (b->dx != 0.0f || b->dy != 0.0f)) {  }
+            else if (perp_dx == 0.0f && perp_dy == 0.0f) { perp_dx = 1.0f; } 
 
 
             float offset = sinf(b->angle) * b->amplitude;
@@ -657,7 +658,7 @@ void update_enemy_bullets_optimized(void) {
             b->angle += b->angle_increment;
         }
 
-        if (b->x < -BULLET_SIZE * 2 || b->x > SCREEN_WIDTH + BULLET_SIZE || b->y < -BULLET_SIZE * 2 || b->y > SCREEN_HEIGHT + BULLET_SIZE) { // Wider off-screen check
+        if (b->x < -BULLET_SIZE * 2 || b->x > SCREEN_WIDTH + BULLET_SIZE || b->y < -BULLET_SIZE * 2 || b->y > SCREEN_HEIGHT + BULLET_SIZE) { 
             b->active = 0;
         }
 
@@ -665,12 +666,10 @@ void update_enemy_bullets_optimized(void) {
             active_enemy_bullet_indices[i] = active_enemy_bullet_indices[--num_active_enemy_bullets];
             i--; 
         } else {
-            u16 bullet_color = YELLOW; // Default enemy bullet color
+            u16 bullet_color = YELLOW; 
             if (b->pattern == PATTERN_SPIRAL) {
-                bullet_color = MAGENTA; // Spiral bullets are magenta
+                bullet_color = MAGENTA; 
             }
-            // Draw based on shape (or always solid square for simplicity)
-            // Using BULLET_SIZE for all enemy bullets for now
             draw_rect_optimized((int)b->x, (int)b->y, BULLET_SIZE, BULLET_SIZE, bullet_color);
         }
     }
@@ -699,10 +698,8 @@ void check_collisions_optimized(void) {
                 pb->active = 0;
                 e->active = 0; 
                 active_enemy_indices[j] = active_enemy_indices[--num_active_enemies];
-                j--; // Recheck swapped enemy
-                // Optional: spawn replacement enemy?
-                // if (simple_rand() % 100 < 10) spawn_random_enemy();
-                break; // Player bullet is consumed
+                j--; 
+                break; 
             }
         }
     }
@@ -746,53 +743,50 @@ void check_collisions_optimized(void) {
             eb->y < player.y + PLAYER_SIZE &&
             eb->y + BULLET_SIZE > player.y) {
             
-            clear_shape(eb->x, eb->y, BULLET_SIZE, eb->shape);
+            // MODIFICATION: Clear the bullet, but player is invincible for testing
+            clear_rect(eb->x, eb->y, BULLET_SIZE, BULLET_SIZE); // Use clear_rect if enemy bullets are always solid squares
             eb->active = 0; 
             
-            // Player Hit Logic!
-            // Example: Simple Game Over
-            LCD_Fill(0, 0, SCREEN_WIDTH-1, SCREEN_HEIGHT-1, BLACK); // Clear screen
+            // Player Hit Logic - FOR TESTING, PLAYER IS NOW INVINCIBLE
+            // The game over sequence below is skipped.
+            /* LCD_Fill(0, 0, SCREEN_WIDTH-1, SCREEN_HEIGHT-1, BLACK); // Clear screen
             LCD_ShowString(SCREEN_WIDTH/2 - 40, SCREEN_HEIGHT/2 - 8, (u8*)"GAME OVER", RED);
             delay_1ms(2000);
             LCD_ShowString(SCREEN_WIDTH/2 - 50, SCREEN_HEIGHT/2 + 8, (u8*)"Score: TODO", WHITE); // Placeholder for score
             delay_1ms(3000);
             init_game(); // Restart game
             return; // Exit current frame processing to restart cleanly
+            */
         }
     }
 }
 
 void game_loop(int difficulty) {
-    init_game();
+    init_game(); // Consider passing difficulty to init_game if needed
     LCD_Clear(BLACK);
-
-    // Use difficulty to adjust parameters if needed
-    // e.g., enemy speed, spawn rate, bullet frequency etc.
-    // For now, it's unused after init.
 
     while (1) {
         update_fps_counter();
         update_entity_counter_optimized();
         
         update_player(); 
-        update_enemies(); // Update enemies before bullets so they can shoot from current pos
+        update_enemies(); 
         
         update_player_bullets_optimized();
         update_tracking_bullets();
-        update_enemy_bullets_optimized(); // Handles enemy firing & bullet updates
+        update_enemy_bullets_optimized(); 
         
-        check_collisions_optimized(); // Check collisions after all movements for the frame
+        check_collisions_optimized(); 
         
         draw_performance_counters();
 
-        delay_1ms(16); // Aim for ~60 FPS
+        delay_1ms(16); 
     }
 }
 
 int main(void) {
   IO_init();
-  // int difficulty = select(); // Assuming select() function exists.
-  int difficulty = 0; // Default difficulty
+  int difficulty = select(); 
   game_loop(difficulty);
   return 0;
 }
