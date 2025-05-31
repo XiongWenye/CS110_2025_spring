@@ -680,8 +680,3 @@ void LCD_ShowLogo(void)
 		LCD_WR_DATA8(logo_bmp[i]);
 	}			
 }
-
-// In lcd.c, replace the old LCD_Clear with this:
-void LCD_Clear(u16 Color) {
-    LCD_Fill(0, 0, LCD_W - 1, LCD_H - 1, Color);
-}
