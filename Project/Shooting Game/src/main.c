@@ -402,7 +402,7 @@ void update_player_bullets_optimized(void) {
         b->x += b->dx * b->speed;
         b->y += b->dy * b->speed;
 
-        if (b->x < -BULLET_SIZE || b->x > SCREEN_WIDTH || b->y < -BULLET_SIZE || b->y > SCREEN_HEIGHT) {
+        if (b->x < BULLET_SIZE || b->x > SCREEN_WIDTH - BULLET_SIZE || b->y < BULLET_SIZE || b->y > SCREEN_HEIGHT - BULLET_SIZE) {
             b->active = 0; // Mark as inactive
         }
 
@@ -486,13 +486,20 @@ void update_enemies(void) {
 
         e->y += e->speed;
 
-        // Simple boundary bounce (can be improved)
         if (e->y > SCREEN_HEIGHT - ENEMY_SIZE) {
             e->y = SCREEN_HEIGHT - ENEMY_SIZE;
             e->speed *= -1;
         } else if (e->y < 0) {
             e->y = 0;
             e->speed *= -1;
+        }
+
+        if (e->x < 0) {
+            e->x = 1;
+            e->speed *= -1; // Bounce off left edge
+        } else if (e->x > SCREEN_WIDTH - ENEMY_SIZE) {
+            e->x = SCREEN_WIDTH - ENEMY_SIZE;
+            e->speed *= -1; // Bounce off right edge
         }
         
 
@@ -553,7 +560,7 @@ void update_enemy_bullets_optimized(void) {
                             enemy_bullets[j].x = e->x + ENEMY_SIZE / 2 - BULLET_SIZE / 2;
                             enemy_bullets[j].y = e->y + ENEMY_SIZE / 2 - BULLET_SIZE / 2;
                             enemy_bullets[j].active = 1;
-                            enemy_bullets[j].speed = 2;
+                            enemy_bullets[j].speed = 1;
                             enemy_bullets[j].dx = directions[dir][0];
                             enemy_bullets[j].dy = directions[dir][1];
                             enemy_bullets[j].shape = e->shape;
@@ -570,7 +577,7 @@ void update_enemy_bullets_optimized(void) {
                             enemy_bullets[j].x = e->x + ENEMY_SIZE / 2 - BULLET_SIZE / 2 + (bullet - bullet_count/2) * (BULLET_SIZE + 1);
                             enemy_bullets[j].y = e->y + ENEMY_SIZE;
                             enemy_bullets[j].active = 1;
-                            enemy_bullets[j].speed = 2;
+                            enemy_bullets[j].speed = 1;
                             enemy_bullets[j].dx = 0;
                             enemy_bullets[j].dy = 1; // Move down
                             enemy_bullets[j].shape = e->shape;
@@ -593,7 +600,7 @@ void update_enemy_bullets_optimized(void) {
         b->x += b->dx * b->speed;
         b->y += b->dy * b->speed;
 
-        if (b->x < BULLET_SIZE || b->x > SCREEN_WIDTH - BULLET_SIZE || b->y < BULLET_SIZE || b->y > SCREEN_HEIGHT - BULLET_SIZE) {
+        if (b->x <= BULLET_SIZE || b->x >= SCREEN_WIDTH - BULLET_SIZE || b->y <= BULLET_SIZE || b->y >= SCREEN_HEIGHT - BULLET_SIZE) {
             b->active = 0;
         }
 
