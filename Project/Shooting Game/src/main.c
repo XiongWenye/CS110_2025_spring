@@ -11,10 +11,10 @@
 // Entity sizes (kept as int for pixel dimensions)
 #define PLAYER_SIZE 6
 #define ENEMY_SIZE 4
-#define BULLET_SIZE 2
+#define BULLET_SIZE 1
 #define MAX_BULLETS 300
 #define MAX_ENEMY_BULLETS 250
-#define MAX_ENEMIES 20
+#define MAX_ENEMIES 30
 
 // Tracking bullets
 #define MAX_TRACKING_BULLETS 50
@@ -287,6 +287,13 @@ void spawn_random_enemy(void) {
             enemies[i].shape = simple_rand() % 3;
             
             active_enemy_indices[num_active_enemies++] = i;
+
+            if (enemies[i].type == 0 || enemies[i].type == 1) {
+                enemies[i].speed = 0.0f;
+            }
+            if (enemies[i].type == 0) {
+                enemies[i].y = SCREEN_HEIGHT - ENEMY_SIZE - 2.0f; // Bottom spawn
+            }
             break;
         }
     }
@@ -503,24 +510,26 @@ void update_enemies(void) {
 
         e->y += e->speed;
 
-        if (e->y > SCREEN_HEIGHT) { 
-            e->active = 0;
-        } else if (e->y < -ENEMY_SIZE * 2.0f) { // Allow some offscreen top before deactivating
-             e->active = 0;
+        if (e->y > SCREEN_HEIGHT) {
+            e->y = SCREEN_HEIGHT;
+            e->speed = -e->speed; // Reverse direction if it goes off the bottom
         }
-        
-        if (e->type == 1 ) {
-            if(fps_frame_count % 120 < 60) { // Every 2 seconds, change direction for 1 second
-                 e->x += e->speed * 0.5f;
-            } else {
-                 e->x -= e->speed * 0.5f;
-            }
+
+        if (e->y < 0.0f) {
+            e->y = 0.0f;
+            e->speed = -e->speed; // Reverse direction if it goes off the top
         }
+
+        if (e->x < 0.0f) {
+            e->x = 0.0f;
+            e->speed = -e->speed; // Reverse direction if it goes off the left
+        }
+        else if (e->x > (float)SCREEN_WIDTH - ENEMY_SIZE) {
+            e->x = (float)SCREEN_WIDTH - ENEMY_SIZE;
+            e->speed = -e->speed; // Reverse direction if it goes off the right
+        }
+
        
-        if (e->x < 0.0f) e->x = 0.0f;
-        if (e->x > (float)SCREEN_WIDTH - ENEMY_SIZE) e->x = (float)SCREEN_WIDTH - ENEMY_SIZE;
-
-
         if (!e->active) {
             active_enemy_indices[i] = active_enemy_indices[--num_active_enemies];
             i--;
@@ -551,14 +560,14 @@ void update_enemy_bullets_optimized(void) {
 
         if (e->type == 0) { 
             shoot_interval = 70; 
-            bullet_count = 1;    
+            bullet_count = 12;    
         } else if (e->type == 1) { 
             shoot_interval = 50;
-            bullet_count = 3;
+            bullet_count = 15;
             bullet_speed = 2.2f;
         } else if (e->type == 2) { 
             shoot_interval = 80;
-            bullet_count = 8; 
+            bullet_count = 20; 
             bullet_speed = 1.5f;
         } else { 
             shoot_interval = 60;
@@ -780,7 +789,7 @@ void game_loop(int difficulty) {
         
         draw_performance_counters();
 
-        delay_1ms(16); 
+        delay_1ms(10); 
     }
 }
 
