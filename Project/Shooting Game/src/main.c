@@ -495,12 +495,6 @@ void update_enemies(void) {
             e->speed *= -1;
         }
         
-        // Random horizontal movement
-        if (simple_rand() % 100 < 10) {
-            e->x += (simple_rand() % 3 - 1) * 2; // Move -2, 0, or 2
-            if (e->x < 0) e->x = 0;
-            if (e->x > SCREEN_WIDTH - ENEMY_SIZE) e->x = SCREEN_WIDTH - ENEMY_SIZE;
-        }
 
         if (!e->active) { // Should not happen here, but as a safeguard
             active_enemy_indices[i] = active_enemy_indices[--num_active_enemies];
@@ -737,7 +731,7 @@ void game_loop(int difficulty) {
         // If your target is 60 FPS (16ms/frame), and your loop takes ~10ms, delay_1ms(1) is fine.
         // If your loop takes >16ms, any delay makes it worse.
         // For development, you might remove delay to see max possible FPS.
-        delay_1ms(1); // Minimal delay
+        delay_1ms(6); // Minimal delay
     }
 }
 
