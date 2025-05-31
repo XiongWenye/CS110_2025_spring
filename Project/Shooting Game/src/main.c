@@ -11,8 +11,8 @@
 #define ENEMY_SIZE 4
 #define BULLET_SIZE 2         // OPTIMIZATION: Smaller bullets (2x2)
 #define MAX_BULLETS 300
-#define MAX_ENEMY_BULLETS 300
-#define MAX_ENEMIES 100
+#define MAX_ENEMY_BULLETS 500 // 增加敌人子弹上限
+#define MAX_ENEMIES 30        // 减少敌人数量从100到30
 
 // Tracking bullets
 #define MAX_TRACKING_BULLETS 50
@@ -82,7 +82,6 @@ int num_active_enemies = 0;
 int active_tracking_bullet_indices[MAX_TRACKING_BULLETS];
 int num_active_tracking_bullets = 0;
 
-
 // Random number generator state
 static unsigned int rand_seed = 12345;
 
@@ -97,7 +96,6 @@ static int last_displayed_fps = -1;
 static int last_displayed_entities = -1;
 static uint64_t fps_measurement_start_time = 0;
 static uint32_t fps_frame_count = 0;
-
 
 void Inp_init(void) {
   rcu_periph_clock_enable(RCU_GPIOA);
@@ -274,7 +272,7 @@ void spawn_random_enemy(void) {
             enemies[i].y = -(simple_rand() % 20 + 5); // Spawn above screen
             enemies[i].active = 1;
             enemies[i].speed = 1 + simple_rand() % 2; // Speed 1-2
-            enemies[i].shoot_timer = simple_rand() % 60 + 30;
+            enemies[i].shoot_timer = simple_rand() % 30 + 15; // 减少射击间隔
             enemies[i].type = simple_rand() % 3;
             enemies[i].shape = simple_rand() % 3;
             
@@ -301,7 +299,7 @@ void init_game(void) {
     num_active_enemies = 0;
     for (int i = 0; i < MAX_ENEMIES; i++) enemies[i].active = 0;
 
-    for (int i = 0; i < 10; i++) spawn_random_enemy();
+    for (int i = 0; i < 5; i++) spawn_random_enemy(); // 减少初始敌人数量
 
     frame_counter = 0;
     fps_measurement_start_time = 0; // Reset FPS counter
@@ -474,9 +472,9 @@ void update_enemies(void) {
     static int formation_timer = 0; // Currently not used for complex formations
 
     spawn_timer++;
-    if (spawn_timer >= 20) { // Spawn more frequently for testing
+    if (spawn_timer >= 40) { // 降低敌人生成频率
         spawn_timer = 0;
-        if (simple_rand() % 100 < 40) spawn_random_enemy(); // Increased spawn chance
+        if (simple_rand() % 100 < 25) spawn_random_enemy(); // 降低生成概率
     }
     // formation_timer can be used for more complex spawning patterns later
 
@@ -504,9 +502,6 @@ void update_enemies(void) {
             if (e->x > SCREEN_WIDTH - ENEMY_SIZE) e->x = SCREEN_WIDTH - ENEMY_SIZE;
         }
 
-
-        // Enemy shooting logic (moved to update_enemy_bullets_optimized for clarity)
-
         if (!e->active) { // Should not happen here, but as a safeguard
             active_enemy_indices[i] = active_enemy_indices[--num_active_enemies];
             i--;
@@ -515,7 +510,7 @@ void update_enemies(void) {
             switch (e->type) {
                 case 0: enemy_color = RED; break;
                 case 1: enemy_color = MAGENTA; break;
-                case 2: enemy_color = YELLOW; break; // Changed from YELLOW to make it distinct from enemy bullets
+                case 2: enemy_color = YELLOW; break;
                 default: enemy_color = RED; break;
             }
             draw_shape(e->x, e->y, ENEMY_SIZE, e->shape, enemy_color);
@@ -532,26 +527,63 @@ void update_enemy_bullets_optimized(void) {
 
         e->shoot_timer++;
         int shoot_interval;
+        int bullet_count;
         switch (e->type) {
-            case 0: shoot_interval = 90; break; 
-            case 1: shoot_interval = 60; break;
-            case 2: shoot_interval = 120; break;
-            default: shoot_interval = 90; break;
+            case 0: 
+                shoot_interval = 40; // 更频繁射击
+                bullet_count = 3; // 射击3发子弹
+                break; 
+            case 1: 
+                shoot_interval = 35; // 更频繁射击
+                bullet_count = 4; // 射击4发子弹
+                break;
+            case 2: 
+                shoot_interval = 50; // 更频繁射击
+                bullet_count = 8; // 向8个方向射击
+                break;
+            default: 
+                shoot_interval = 40; 
+                bullet_count = 3;
+                break;
         }
 
-        if (e->shoot_timer >= shoot_interval && num_active_enemy_bullets < MAX_ENEMY_BULLETS) {
+        if (e->shoot_timer >= shoot_interval) {
             e->shoot_timer = 0;
-            for (int j = 0; j < MAX_ENEMY_BULLETS; j++) { // Find inactive slot
-                if (!enemy_bullets[j].active) {
-                    enemy_bullets[j].x = e->x + ENEMY_SIZE / 2 - BULLET_SIZE / 2;
-                    enemy_bullets[j].y = e->y + ENEMY_SIZE;
-                    enemy_bullets[j].active = 1;
-                    enemy_bullets[j].speed = 2;
-                    enemy_bullets[j].dx = 0;
-                    enemy_bullets[j].dy = 1; // Move down
-                    enemy_bullets[j].shape = e->shape; // Enemy bullet takes enemy's shape
-                    active_enemy_bullet_indices[num_active_enemy_bullets++] = j;
-                    break;
+            
+            if (e->type == 2) {
+                // Type 2: 向8个方向发射子弹
+                int directions[8][2] = {{0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}, {-1, 0}, {-1, 1}};
+                for (int dir = 0; dir < 8 && num_active_enemy_bullets < MAX_ENEMY_BULLETS; dir++) {
+                    for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
+                        if (!enemy_bullets[j].active) {
+                            enemy_bullets[j].x = e->x + ENEMY_SIZE / 2 - BULLET_SIZE / 2;
+                            enemy_bullets[j].y = e->y + ENEMY_SIZE / 2 - BULLET_SIZE / 2;
+                            enemy_bullets[j].active = 1;
+                            enemy_bullets[j].speed = 2;
+                            enemy_bullets[j].dx = directions[dir][0];
+                            enemy_bullets[j].dy = directions[dir][1];
+                            enemy_bullets[j].shape = e->shape;
+                            active_enemy_bullet_indices[num_active_enemy_bullets++] = j;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // Type 0 和 1: 向下方发射多发子弹
+                for (int bullet = 0; bullet < bullet_count && num_active_enemy_bullets < MAX_ENEMY_BULLETS; bullet++) {
+                    for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
+                        if (!enemy_bullets[j].active) {
+                            enemy_bullets[j].x = e->x + ENEMY_SIZE / 2 - BULLET_SIZE / 2 + (bullet - bullet_count/2) * (BULLET_SIZE + 1);
+                            enemy_bullets[j].y = e->y + ENEMY_SIZE;
+                            enemy_bullets[j].active = 1;
+                            enemy_bullets[j].speed = 2;
+                            enemy_bullets[j].dx = 0;
+                            enemy_bullets[j].dy = 1; // Move down
+                            enemy_bullets[j].shape = e->shape;
+                            active_enemy_bullet_indices[num_active_enemy_bullets++] = j;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -576,7 +608,6 @@ void update_enemy_bullets_optimized(void) {
             i--; 
         } else {
             // Enemy bullets are yellow and use their shape (or BULLET_SIZE if shape is solid)
-            int size_to_draw = (b->shape == SHAPE_SOLID_SQUARE) ? BULLET_SIZE : ENEMY_SIZE; // A bit of a hack, consider bullet specific shapes
             if (b->shape == SHAPE_SOLID_SQUARE) {
                  draw_rect_optimized(b->x, b->y, BULLET_SIZE, BULLET_SIZE, YELLOW);
             } else {
@@ -585,7 +616,6 @@ void update_enemy_bullets_optimized(void) {
         }
     }
 }
-
 
 void check_collisions_optimized(void) {
     // Player bullets vs Enemies
@@ -670,7 +700,6 @@ void check_collisions_optimized(void) {
     }
 }
 
-
 void game_loop(int difficulty) {
     init_game();
     LCD_Clear(BLACK); // Assumes this is now fast
@@ -702,8 +731,6 @@ void game_loop(int difficulty) {
         // If they are inside game area, they might be overwritten.
         // The current draw_performance_counters clears its own background.
         draw_performance_counters();
-
-
 
         // OPTIMIZATION: Adjust delay. A small delay helps prevent 100% CPU usage
         // and can make the game feel smoother if FPS is very high.
