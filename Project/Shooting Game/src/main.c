@@ -574,7 +574,7 @@ void update_enemy_bullets_optimized(void) {
                 for (int bullet = 0; bullet < bullet_count && num_active_enemy_bullets < MAX_ENEMY_BULLETS; bullet++) {
                     for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
                         if (!enemy_bullets[j].active) {
-                            enemy_bullets[j].x = e->x + ENEMY_SIZE / 2 - BULLET_SIZE / 2 + (bullet - bullet_count/2) * (BULLET_SIZE + 1);
+                            enemy_bullets[j].x = e->x + min(0, ((ENEMY_SIZE / 2) - (BULLET_SIZE / 2) + (bullet - (bullet_count/2)) * (BULLET_SIZE + 1)));
                             enemy_bullets[j].y = e->y + ENEMY_SIZE;
                             enemy_bullets[j].active = 1;
                             enemy_bullets[j].speed = 1;
