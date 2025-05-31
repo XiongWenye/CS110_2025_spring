@@ -11,7 +11,7 @@
 #define ENEMY_SIZE 4
 #define BULLET_SIZE 2         // OPTIMIZATION: Smaller bullets (2x2)
 #define MAX_BULLETS 300
-#define MAX_ENEMY_BULLETS 500 // 增加敌人子弹上限
+#define MAX_ENEMY_BULLETS 300 // 增加敌人子弹上限
 #define MAX_ENEMIES 30        // 减少敌人数量从100到30
 
 // Tracking bullets
@@ -26,7 +26,7 @@
 
 // FPS and entity counting
 #define FPS_SAMPLE_FRAMES 8
-#define ENTITY_UPDATE_INTERVAL 1 // Update entity counter every frame now that it's cheap
+#define ENTITY_UPDATE_INTERVAL 20// Update entity counter every frame now that it's cheap
 
 // Player structure
 typedef struct {
@@ -731,7 +731,7 @@ void game_loop(int difficulty) {
         // If your target is 60 FPS (16ms/frame), and your loop takes ~10ms, delay_1ms(1) is fine.
         // If your loop takes >16ms, any delay makes it worse.
         // For development, you might remove delay to see max possible FPS.
-        delay_1ms(6); // Minimal delay
+        delay_1ms(16); // Minimal delay
     }
 }
 
