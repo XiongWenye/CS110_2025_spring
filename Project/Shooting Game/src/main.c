@@ -599,7 +599,7 @@ void update_enemy_bullets_optimized(void) {
         b->x += b->dx * b->speed;
         b->y += b->dy * b->speed;
 
-        if (b->x < -BULLET_SIZE || b->x > SCREEN_WIDTH || b->y < -BULLET_SIZE || b->y > SCREEN_HEIGHT + 10) {
+        if (b->x < BULLET_SIZE || b->x > SCREEN_WIDTH - BULLET_SIZE || b->y < BULLET_SIZE || b->y > SCREEN_HEIGHT - BULLET_SIZE) {
             b->active = 0;
         }
 
