@@ -2,17 +2,23 @@
 #include "utils.h"
 #include "assembly/example.h"
 #include "assembly/select.h"
-
+#include <math.h>
+#define max(a, b) ((a) > (b) ? (a) : (b))
 // Game constants
 #define SCREEN_WIDTH 120
 #define SCREEN_HEIGHT 80
 // OPTIMIZATION: Adjusted entity sizes, especially bullets
 #define PLAYER_SIZE 6
 #define ENEMY_SIZE 4
-#define BULLET_SIZE 2         // OPTIMIZATION: Smaller bullets (2x2)
+#define BULLET_SIZE 1         // OPTIMIZATION: Smaller bullets (2x2)
 #define MAX_BULLETS 300
 #define MAX_ENEMY_BULLETS 300 // 增加敌人子弹上限
 #define MAX_ENEMIES 30        // 减少敌人数量从100到30
+
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 // Tracking bullets
 #define MAX_TRACKING_BULLETS 50
@@ -271,11 +277,19 @@ void spawn_random_enemy(void) {
             enemies[i].x = simple_rand() % (SCREEN_WIDTH - ENEMY_SIZE);
             enemies[i].y = -(simple_rand() % 20 + 5); // Spawn above screen
             enemies[i].active = 1;
-            enemies[i].speed = 1 + simple_rand() % 2; // Speed 1-2
+            enemies[i].speed = 1;
             enemies[i].shoot_timer = simple_rand() % 30 + 15; // 减少射击间隔
             enemies[i].type = simple_rand() % 3;
             enemies[i].shape = simple_rand() % 3;
-            
+
+            if (enemies[i].type != 2) {
+                enemies[i].speed = 0;
+            }
+
+            if (enemies[i].type == 1) {
+                enemies[i].y = SCREEN_HEIGHT - ENEMY_SIZE - 2; 
+            }
+
             active_enemy_indices[num_active_enemies++] = i;
             break;
         }
@@ -532,11 +546,11 @@ void update_enemy_bullets_optimized(void) {
         switch (e->type) {
             case 0: 
                 shoot_interval = 40; // 更频繁射击
-                bullet_count = 3; // 射击3发子弹
+                bullet_count = 10; //
                 break; 
             case 1: 
                 shoot_interval = 35; // 更频繁射击
-                bullet_count = 4; // 射击4发子弹
+                bullet_count = 12; // 
                 break;
             case 2: 
                 shoot_interval = 50; // 更频繁射击
@@ -544,7 +558,7 @@ void update_enemy_bullets_optimized(void) {
                 break;
             default: 
                 shoot_interval = 40; 
-                bullet_count = 3;
+                bullet_count = 15;
                 break;
         }
 
@@ -569,17 +583,36 @@ void update_enemy_bullets_optimized(void) {
                         }
                     }
                 }
-            } else {
-                // Type 0 和 1: 向下方发射多发子弹
+            } else if (e->type == 0) {
+                // Type 0 : 向下方发射多发子弹
                 for (int bullet = 0; bullet < bullet_count && num_active_enemy_bullets < MAX_ENEMY_BULLETS; bullet++) {
                     for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
                         if (!enemy_bullets[j].active) {
-                            enemy_bullets[j].x = e->x + min(0, ((ENEMY_SIZE / 2) - (BULLET_SIZE / 2) + (bullet - (bullet_count/2)) * (BULLET_SIZE + 1)));
+                            enemy_bullets[j].x = e->x + max(0, ((ENEMY_SIZE / 2) - (BULLET_SIZE / 2) + (bullet - (bullet_count/2)) * (BULLET_SIZE + 2)));
                             enemy_bullets[j].y = e->y + ENEMY_SIZE;
                             enemy_bullets[j].active = 1;
                             enemy_bullets[j].speed = 1;
                             enemy_bullets[j].dx = 0;
                             enemy_bullets[j].dy = 1; // Move down
+                            enemy_bullets[j].shape = e->shape;
+                            active_enemy_bullet_indices[num_active_enemy_bullets++] = j;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // Type 1: enemies at the bottom of the screen shooting spirally(upwards)
+                for (int bullet = 0; bullet < bullet_count && num_active_enemy_bullets < MAX_ENEMY_BULLETS; bullet++) {
+                    for (int j = 0; j < MAX_ENEMY_BULLETS; j++) {
+                        if (!enemy_bullets[j].active) {
+                            enemy_bullets[j].x = e->x + ENEMY_SIZE / 2 - BULLET_SIZE / 2;
+                            enemy_bullets[j].y = e->y + ENEMY_SIZE / 2 - BULLET_SIZE / 2;
+                            enemy_bullets[j].active = 1;
+                            enemy_bullets[j].speed = 1;
+                            // Spiral effect
+                            double angle = (bullet * 45.0 * M_PI / 180.0); // 8 directions, each 45 degrees
+                            enemy_bullets[j].dx = cos(angle);
+                            enemy_bullets[j].dy = sin(angle);
                             enemy_bullets[j].shape = e->shape;
                             active_enemy_bullet_indices[num_active_enemy_bullets++] = j;
                             break;
@@ -738,7 +771,7 @@ void game_loop(int difficulty) {
         // If your target is 60 FPS (16ms/frame), and your loop takes ~10ms, delay_1ms(1) is fine.
         // If your loop takes >16ms, any delay makes it worse.
         // For development, you might remove delay to see max possible FPS.
-        delay_1ms(16); // Minimal delay
+        delay_1ms(1); // Minimal delay
     }
 }
 
