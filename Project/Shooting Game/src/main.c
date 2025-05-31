@@ -13,8 +13,8 @@
 #define ENEMY_SIZE 4
 #define BULLET_SIZE 2
 #define MAX_BULLETS 300
-#define MAX_ENEMY_BULLETS 300
-#define MAX_ENEMIES 30
+#define MAX_ENEMY_BULLETS 250
+#define MAX_ENEMIES 20
 
 // Tracking bullets
 #define MAX_TRACKING_BULLETS 50
@@ -276,7 +276,7 @@ void spawn_random_enemy(void) {
     for (int i = 0; i < MAX_ENEMIES; i++) {
         if (!enemies[i].active) {
             enemies[i].x = random_float(0.0f, (float)SCREEN_WIDTH - ENEMY_SIZE);
-            enemies[i].y = -random_float(5.0f, 25.0f);
+            enemies[i].y = random_float(5.0f, 25.0f);
             enemies[i].active = 1;
             enemies[i].speed = random_float(0.5f, 1.5f); // Slightly slower enemies
             enemies[i].shoot_timer = simple_rand() % 30 + 15;
@@ -667,7 +667,7 @@ void update_enemy_bullets_optimized(void) {
         } else {
             u16 bullet_color = YELLOW; // Default enemy bullet color
             if (b->pattern == PATTERN_SPIRAL) {
-                bullet_color = ORANGE; // Spiral bullets are orange
+                bullet_color = MAGENTA; // Spiral bullets are magenta
             }
             // Draw based on shape (or always solid square for simplicity)
             // Using BULLET_SIZE for all enemy bullets for now
