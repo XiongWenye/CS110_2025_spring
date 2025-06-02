@@ -12,9 +12,9 @@
 #define PLAYER_SIZE 6
 #define ENEMY_SIZE 4
 #define BULLET_SIZE 1
-#define MAX_BULLETS 300
-#define MAX_ENEMY_BULLETS 250
-#define MAX_ENEMIES 30
+#define MAX_BULLETS 150
+#define MAX_ENEMY_BULLETS 300
+#define MAX_ENEMIES 15
 
 // Tracking bullets
 #define MAX_TRACKING_BULLETS 50
@@ -29,6 +29,7 @@
 // Bullet patterns
 #define PATTERN_NORMAL 0
 #define PATTERN_SPIRAL 1
+#define PATTERN_PARABOLA 2
 
 // FPS and entity counting
 #define FPS_SAMPLE_FRAMES 8
@@ -162,7 +163,7 @@ static void LCD_DrawHollowRect(int x1, int y1, int x2, int y2, u16 color) {
 void clear_shape(float x, float y, int size, int shape) {
     switch(shape) {
         case SHAPE_HOLLOW_CIRCLE:
-            LCD_DrawCircle((int)(x + size/2.0f), (int)(y + size/2.0f), size/2, BLACK);
+            LCD_DrawCircle((int)(x + size/2.0f), (int)(y + size/2.0f), size, BLACK);
             break;
         case SHAPE_HOLLOW_SQUARE:
             LCD_DrawHollowRect((int)x, (int)y, (int)(x + size - 1), (int)(y + size - 1), BLACK);
@@ -176,7 +177,7 @@ void clear_shape(float x, float y, int size, int shape) {
 void draw_shape(float x, float y, int size, int shape, u16 color) {
     switch(shape) {
         case SHAPE_HOLLOW_CIRCLE:
-            LCD_DrawCircle((int)(x + size/2.0f), (int)(y + size/2.0f), size/2, color);
+            LCD_DrawCircle((int)(x + size/2.0f), (int)(y + size/2.0f), size, color);
             break;
         case SHAPE_HOLLOW_SQUARE:
             LCD_DrawHollowRect((int)x, (int)y, (int)(x + size - 1), (int)(y + size - 1), color);
@@ -209,7 +210,7 @@ void update_fps_counter(void) {
 }
 
 int count_active_entities_quick(void) {
-    return 1 + num_active_player_bullets + num_active_enemy_bullets + num_active_tracking_bullets + num_active_enemies;
+    return num_active_player_bullets + num_active_enemy_bullets + num_active_tracking_bullets ;
 }
 
 void update_entity_counter_optimized(void) {
@@ -292,7 +293,7 @@ void spawn_random_enemy(void) {
                 enemies[i].speed = 0.0f;
             }
             if (enemies[i].type == 0) {
-                enemies[i].y = SCREEN_HEIGHT - ENEMY_SIZE - 2.0f; // Bottom spawn
+                enemies[i].y = SCREEN_HEIGHT - ENEMY_SIZE - 10.0f; // Bottom spawn
             }
             break;
         }
@@ -325,9 +326,18 @@ void init_game(void) { // Consider taking (int difficulty) if it affects init
     last_displayed_entities = -1; 
 }
 
+int button1_debounce1 = 0;
+int button1_debounce2 = 400;
+int millisecond(){
+    uint64_t start_mtime;
+    uint64_t tmp = get_timer_value();
+    do {
+        start_mtime = get_timer_value();
+    } while (start_mtime == tmp);
+    return (start_mtime / (SystemCoreClock / 4000)); // Convert to milliseconds
+}// return the now time
 void update_player(void) {
     static float prev_x = -1.0f, prev_y = -1.0f;
-    static int button1_debounce = 0;
     static int button2_debounce = 0;
     static int center_button_debounce = 0;
 
@@ -342,34 +352,35 @@ void update_player(void) {
     if (Get_Button(JOY_UP) && player.y > 0.0f) player.y -= player.speed;
     if (Get_Button(JOY_DOWN) && player.y < (float)SCREEN_HEIGHT - PLAYER_SIZE) player.y += player.speed;
 
-    if (Get_Button(BUTTON_1)) { 
-        if (button1_debounce == 0) {
-            button1_debounce = 7; 
+    // Debounce logic for BUTTON_1
+    if (Get_Button(BUTTON_1)) {
+        button1_debounce2 = millisecond();
+        if (button1_debounce2 - button1_debounce1 >= 300) {
+            button1_debounce1 = button1_debounce2; // Reset debounce timer
             for (int burst = 0; burst < 3; burst++) {
                 if (num_active_player_bullets < MAX_BULLETS) {
                     for (int i = 0; i < MAX_BULLETS; i++) {
                         if (!player_bullets[i].active) {
-                            player_bullets[i].x = player.x + PLAYER_SIZE / 2.0f - BULLET_SIZE / 2.0f + (burst -1) * (BULLET_SIZE + 1.5f); 
-                            player_bullets[i].y = player.y - BULLET_SIZE - burst * 2.0f; 
+                            player_bullets[i].x = player.x + PLAYER_SIZE / 2.0f - BULLET_SIZE / 2.0f + (burst - 1) * (BULLET_SIZE + 1.5f);
+                            player_bullets[i].y = player.y - BULLET_SIZE - burst * 2.0f;
                             player_bullets[i].active = 1;
                             player_bullets[i].speed = 4.5f;
                             player_bullets[i].dx = 0.0f;
                             player_bullets[i].dy = -1.0f;
                             player_bullets[i].shape = SHAPE_SOLID_SQUARE;
-                            player_bullets[i].pattern = PATTERN_NORMAL; 
+                            player_bullets[i].pattern = PATTERN_NORMAL;
                             active_player_bullet_indices[num_active_player_bullets++] = i;
-                            break; 
+                            break;
                         }
                     }
                 }
             }
         }
     }
-    if (button1_debounce > 0) button1_debounce--;
 
     if (Get_Button(BUTTON_2)) { 
         if (button2_debounce == 0) {
-            button2_debounce = 25; 
+            button2_debounce = 20; 
             float directions[5][2] = {{0, -1}, {0.382f, -0.923f}, {-0.382f, -0.923f}, {0.707f, -0.707f}, {-0.707f, -0.707f}}; 
             int num_directions = 5;
             for (int dir = 0; dir < num_directions; dir++) {
@@ -497,9 +508,9 @@ void update_enemies(void) {
     static int spawn_timer = 0;
 
     spawn_timer++;
-    if (spawn_timer >= 60) { 
+    if (spawn_timer >= 100) { 
         spawn_timer = 0;
-        if (simple_rand() % 100 < 30) spawn_random_enemy(); 
+        spawn_random_enemy(); 
     }
 
     for (int i = 0; i < num_active_enemies; i++) {
@@ -556,19 +567,19 @@ void update_enemy_bullets_optimized(void) {
         e->shoot_timer++;
         int shoot_interval;
         int bullet_count = 1; 
-        float bullet_speed = 1.8f;
+        float bullet_speed = 0.8f;
 
         if (e->type == 0) { 
-            shoot_interval = 70; 
-            bullet_count = 12;    
+            shoot_interval = 20; 
+            bullet_count = 50;    
         } else if (e->type == 1) { 
-            shoot_interval = 50;
-            bullet_count = 15;
-            bullet_speed = 2.2f;
+            shoot_interval = 30;
+            bullet_count = 7;
+            bullet_speed = 0.5f;
         } else if (e->type == 2) { 
-            shoot_interval = 80;
-            bullet_count = 20; 
-            bullet_speed = 1.5f;
+            shoot_interval = 40;
+            bullet_count = 25; 
+            bullet_speed = 0.5f;
         } else { 
             shoot_interval = 60;
             bullet_count = 1;
@@ -584,7 +595,7 @@ void update_enemy_bullets_optimized(void) {
                             enemy_bullets[j].x = e->x + ENEMY_SIZE / 2.0f - BULLET_SIZE / 2.0f;
                             enemy_bullets[j].y = e->y - BULLET_SIZE; 
                             enemy_bullets[j].active = 1;
-                            enemy_bullets[j].speed = 1.5f;      
+                            enemy_bullets[j].speed = 0.5f;      
                             enemy_bullets[j].dx = 0.0f;         
                             enemy_bullets[j].dy = -1.0f;        
                             enemy_bullets[j].shape = SHAPE_SOLID_SQUARE; 
@@ -609,7 +620,7 @@ void update_enemy_bullets_optimized(void) {
                             enemy_bullets[j].dx = directions[dir][0];
                             enemy_bullets[j].dy = directions[dir][1];
                             enemy_bullets[j].shape = e->shape;
-                            enemy_bullets[j].pattern = PATTERN_NORMAL;
+                            enemy_bullets[j].pattern = PATTERN_PARABOLA;
                             active_enemy_bullet_indices[num_active_enemy_bullets++] = j;
                             break;
                         }
@@ -665,6 +676,10 @@ void update_enemy_bullets_optimized(void) {
             b->y += base_move_y + perp_dy * offset;
             
             b->angle += b->angle_increment;
+        } else if (b->pattern == PATTERN_PARABOLA) {
+            b->x += b->dx * b->speed;
+            b->y += b->dy * b->speed;
+            b->dy += 0.1f; 
         }
 
         if (b->x < -BULLET_SIZE * 2 || b->x > SCREEN_WIDTH + BULLET_SIZE || b->y < -BULLET_SIZE * 2 || b->y > SCREEN_HEIGHT + BULLET_SIZE) { 
@@ -740,34 +755,7 @@ void check_collisions_optimized(void) {
             }
         }
     }
-    
-    // Enemy bullets vs Player
-    for (int i = 0; i < num_active_enemy_bullets; i++) {
-        int eb_idx = active_enemy_bullet_indices[i];
-        Bullet* eb = &enemy_bullets[eb_idx];
-        if (!eb->active) continue;
 
-        if (eb->x < player.x + PLAYER_SIZE &&
-            eb->x + BULLET_SIZE > player.x &&
-            eb->y < player.y + PLAYER_SIZE &&
-            eb->y + BULLET_SIZE > player.y) {
-            
-            // MODIFICATION: Clear the bullet, but player is invincible for testing
-            clear_rect(eb->x, eb->y, BULLET_SIZE, BULLET_SIZE); // Use clear_rect if enemy bullets are always solid squares
-            eb->active = 0; 
-            
-            // Player Hit Logic - FOR TESTING, PLAYER IS NOW INVINCIBLE
-            // The game over sequence below is skipped.
-            /* LCD_Fill(0, 0, SCREEN_WIDTH-1, SCREEN_HEIGHT-1, BLACK); // Clear screen
-            LCD_ShowString(SCREEN_WIDTH/2 - 40, SCREEN_HEIGHT/2 - 8, (u8*)"GAME OVER", RED);
-            delay_1ms(2000);
-            LCD_ShowString(SCREEN_WIDTH/2 - 50, SCREEN_HEIGHT/2 + 8, (u8*)"Score: TODO", WHITE); // Placeholder for score
-            delay_1ms(3000);
-            init_game(); // Restart game
-            return; // Exit current frame processing to restart cleanly
-            */
-        }
-    }
 }
 
 void game_loop(int difficulty) {
@@ -789,7 +777,7 @@ void game_loop(int difficulty) {
         
         draw_performance_counters();
 
-        delay_1ms(10); 
+        delay_1ms(1); 
     }
 }
 
