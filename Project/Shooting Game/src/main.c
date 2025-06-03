@@ -780,10 +780,12 @@ void game_loop(int difficulty) {
         delay_1ms(1); 
     }
 }
+int g_selected_difficulty = 0;
 
 int main(void) {
   IO_init();
-  int difficulty = select(); 
+  select();
+  int difficulty = g_selected_difficulty; // Get the selected difficulty from the menu
   game_loop(difficulty);
   return 0;
 }
